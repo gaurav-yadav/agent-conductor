@@ -39,7 +39,7 @@ def init() -> None:
 
 
 @cli.command()
-@click.option("--provider", required=True, help="Provider key (e.g., q_cli, claude_code).")
+@click.option("--provider", required=True, help="Provider key (e.g., claude_code).")
 @click.option("--agent-profile", help="Agent profile name used for the terminal.")
 @click.option("--role", default="supervisor", show_default=True, help="Role for window naming.")
 def launch(provider: str, agent_profile: Optional[str], role: str) -> None:
@@ -62,7 +62,7 @@ def list_sessions() -> None:
 
 @cli.command()
 @click.argument("session_name")
-@click.option("--provider", required=True, help="Provider key for the worker.")
+@click.option("--provider", required=True, help="Provider key for the worker (e.g., claude_code).")
 @click.option("--agent-profile", help="Agent profile for the worker.")
 @click.option("--role", default="worker", show_default=True, help="Role label.")
 def worker(session_name: str, provider: str, agent_profile: Optional[str], role: str) -> None:

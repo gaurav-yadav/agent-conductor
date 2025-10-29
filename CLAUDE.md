@@ -25,10 +25,10 @@ uv sync
 uv run uvicorn agent_conductor.api.main:app --reload
 
 # Launch a new supervisor session (in another terminal)
-uv run agent-conductor launch --provider q_cli --agent-profile supervisor
+uv run agent-conductor launch --provider claude_code --agent-profile supervisor
 
 # Spawn a worker in an existing session
-uv run agent-conductor worker <session-name> --provider q_cli --agent-profile tester
+uv run agent-conductor worker <session-name> --provider claude_code --agent-profile tester
 
 # List all active sessions
 uv run agent-conductor sessions
@@ -73,7 +73,7 @@ The codebase follows strict separation of concerns:
 - **API** (`agent_conductor.api`) → FastAPI routes that delegate to services
 - **Services** (`agent_conductor.services`) → business logic orchestrating clients/providers
 - **Clients** (`agent_conductor.clients`) → abstractions over tmux (libtmux) and database (SQLAlchemy)
-- **Providers** (`agent_conductor.providers`) → adapters for specific CLI tools (q_cli, claude_code)
+- **Providers** (`agent_conductor.providers`) → adapters for specific CLI tools (primary: `claude_code`)
 
 **Important**: Never bypass this hierarchy. For example, the CLI should never call tmux directly—it must always go through the API → services → clients chain.
 
@@ -185,7 +185,7 @@ Tools rely on the `CONDUCTOR_TERMINAL_ID` environment variable to identify the c
 Agent behavior is defined by markdown files with YAML frontmatter stored in `~/.conductor/agent-context/`. Profiles specify:
 - `name`: Unique identifier
 - `description`: Human-readable summary
-- `default_provider`: Preferred CLI tool (q_cli, claude_code)
+- `default_provider`: Preferred CLI tool (`claude_code`)
 - `tools`: MCP tool allowlist
 - `mcpServers`: MCP server definitions
 
@@ -209,7 +209,7 @@ uv run agent-conductor init
 uv run uvicorn agent_conductor.api.main:app --reload
 
 # 2. Launch supervisor and capture IDs
-SUPERVISOR_JSON=$(uv run agent-conductor launch --provider q_cli --agent-profile supervisor)
+SUPERVISOR_JSON=$(uv run agent-conductor launch --provider claude_code --agent-profile supervisor)
 SUPERVISOR_ID=$(echo "$SUPERVISOR_JSON" | jq -r '.id')
 SESSION_NAME=$(echo "$SUPERVISOR_JSON" | jq -r '.session_name')
 
@@ -221,7 +221,7 @@ uv run agent-conductor send "$SUPERVISOR_ID" \
 uv run agent-conductor output "$SUPERVISOR_ID" --mode last
 
 # 5. Spawn a worker
-WORKER_JSON=$(uv run agent-conductor worker "$SESSION_NAME" --provider q_cli --agent-profile tester)
+WORKER_JSON=$(uv run agent-conductor worker "$SESSION_NAME" --provider claude_code --agent-profile tester)
 WORKER_ID=$(echo "$WORKER_JSON" | jq -r '.id')
 
 # 6. Test approval workflow

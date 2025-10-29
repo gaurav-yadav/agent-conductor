@@ -95,7 +95,7 @@ Conductor does not enforce structure, but consistent formatting improves agent r
 ---
 name: docs_writer
 description: Writes documentation for Conductor projects
-default_provider: q_cli
+default_provider: claude_code
 tools: ["@conductor-mcp-server"]
 ---
 
@@ -241,7 +241,7 @@ Reuse this skeleton when authoring new profiles:
 ---
 name: <profile-name>
 description: <one sentence summary>
-default_provider: q_cli
+default_provider: claude_code
 tags: [category, expertise]
 tools: ["@conductor-mcp-server"]
 mcpServers:

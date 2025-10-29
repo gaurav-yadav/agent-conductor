@@ -127,7 +127,7 @@ If any tmux pane was manually closed, the API logs a warning but still removes t
 WORKER_JSON=$(
   uv run --project "$AGENT_CONDUCTOR_ROOT" \
     agent-conductor worker "$SESSION_NAME" \
-    --provider q_cli \
+    --provider claude_code \
     --agent-profile tester
 )
 echo "$WORKER_JSON"

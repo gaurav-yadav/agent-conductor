@@ -33,7 +33,7 @@ pyproject.toml               # uv/PEP 621 project metadata & tooling config
 
 - `api/`: Defines the FastAPI app, startup/shutdown hooks, REST routes for sessions, terminals, inbox, flows, and approvals. Background tasks handle cleanup and inbox delivery loops.
 - `services/`: Encapsulates domain logic (terminal orchestration, session management, inbox queueing, approvals, flows, cleanup). Each service depends on lower-level clients and models.
-- `providers/`: Implements the contract for launching terminal-based providers (currently `q_cli` and `claude_code`) and the provider manager that caches instances.
+- `providers/`: Implements the contract for launching terminal-based providers (currently focused on `claude_code`) and the provider manager that caches instances.
 - `clients/`: Abstractions over external systems: tmux via `libtmux`, SQLite via SQLAlchemy/SQLModel.
 - `models/`: Pydantic models (requests/responses) and enums so both API and services share a stable schema.
 - `utils/`: Cross-cutting helpers for logging configuration, filesystem setup (`~/.conductor` tree), and deterministic IDs.

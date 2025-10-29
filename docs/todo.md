@@ -39,7 +39,7 @@
 
 - [x] **Implement the provider system**
   - Define `providers/base.py` abstract contract and `providers/manager.py` registry.
-  - Provide initial providers (`q_cli`, `claude_code`) with concrete implementations rather than stubs, handling prompt initialization and status detection.
+- Provide the initial `claude_code` provider with a concrete implementation rather than stubs, handling prompt initialization and status detection.
 
 - [x] **Author the MCP server tools**
   - Implement `mcp_server/server.py` exposing `handoff`, `assign`, `send_message`, and `request_approval` endpoints backed by the REST API.
@@ -67,6 +67,15 @@
 - [ ] **Quality gates**
   - Add pytest suites covering services, providers, API routers, and CLI commands.
   - Configure CI (GitHub Actions) to run `ruff`, `black`, `mypy`, and `pytest` gates.
+  - Establish a lean testing strategy (KISS + SOLID aligned):
+    1. **Fixtures & harness**: ✅ `tests/conftest.py` creates temp HOME/SQLite + stub tmux/provider manager for isolated runs.
+    2. **Terminal & session services (highest priority)**: ✅ covered via `tests/test_services.py` using stub tmux/providers to validate create/send/capture/delete workflows and cleanup semantics.
+    3. **Inbox & approval services**: ✅ request/approve/deny flows validated in `tests/test_services.py`, including audit log entries and worker/supervisor notifications.
+    4. **API routers**: ✅ exercised with FastAPI `TestClient` in `tests/test_api.py`, covering session lifecycle, terminal IO, approval queueing, and metadata persistence.
+    5. **CLI commands**: use Click `CliRunner` with patched API clients to confirm command arguments, error messages, and output formatting without spawning real sessions.
+    6. **Provider logic**: unit-test Claude Code and Q CLI providers’ status detection / response extraction using captured pane snippets; mock tmux interactions to keep tests fast.
+    7. **Utilities & pathing**: add focused tests for directory bootstrap, ID generation, and logging helpers to catch regressions in shared utilities.
+    8. **Integration smoke**: optional end-to-end test that runs against the `test-workspace` scenario with all subsystems stubbed, ensuring the orchestrated workflow remains simple to validate.
 
 - [ ] **Packaging & release**
   - Validate `uv build` artifacts, smoke-test CLI via `uv tool run agent-conductor --help`.

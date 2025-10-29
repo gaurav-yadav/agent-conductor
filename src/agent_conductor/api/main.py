@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import List
+from typing import Any, List
 
 from fastapi import Depends, FastAPI, HTTPException, status
 
@@ -195,7 +195,7 @@ async def send_terminal_input(
     payload: TerminalInputRequest,
     terminals: TerminalService = Depends(get_terminal_service),
     approvals: ApprovalService = Depends(get_approval_service),
-) -> dict[str, str]:
+) -> dict[str, Any]:
     if payload.requires_approval:
         if not payload.supervisor_id:
             raise HTTPException(status_code=400, detail="supervisor_id is required when requesting approval.")
@@ -322,7 +322,7 @@ async def request_approval(
         terminal_id=payload.terminal_id,
         supervisor_id=payload.supervisor_id,
         command_text=payload.command_text,
-        metadata=payload.metadata,
+        metadata_payload=payload.metadata_payload,
     )
 
 

@@ -173,8 +173,8 @@ The CLI entry point resides in `src/agent_conductor/cli/main.py` and wires toget
 Every command assembles the correct REST request and handles user-facing errors. For example, `launch` validates the provider against `constants.PROVIDERS`, posts to `/sessions`, prints the session metadata, and attaches to tmux unless `--headless` is used.
 
 ```bash
-# Example: Launch a supervisor using the q_cli provider and auto session name
-conductor launch --agents code_supervisor --provider q_cli
+# Example: Launch a supervisor using the claude_code provider and auto session name
+conductor launch --agents code_supervisor --provider claude_code
 ```
 
 The CLI avoids direct tmux manipulation. Even the attach step shells out to `tmux attach-session` only after the server responds with a created session.
@@ -214,7 +214,7 @@ Clients set `CONDUCTOR_TERMINAL_ID` in every tmux pane so terminals can locate t
 
 ### Provider Manager
 
-`src/agent_conductor/providers/manager.py` maintains a registry keyed by provider string (for example `q_cli`, `claude_code`). Responsibilities:
+`src/agent_conductor/providers/manager.py` maintains a registry keyed by provider string (for example `claude_code`). Responsibilities:
 - Lazily instantiate providers upon first use of a terminal.
 - Cache instances in memory so repeated API calls reuse the same process handle.
 - Provide factory hooks for custom providers by extending the registry.
@@ -380,7 +380,7 @@ Configuration resides primarily in `src/agent_conductor/constants.py`. Key value
 - `SESSION_PREFIX = "conductor-"`.
 - `HOME_DIR = Path.home() / ".conductor"`.
 - `TERMINAL_LOG_DIR`, `DB_DIR`, and `LOCAL_AGENT_STORE_DIR` derived from the home directory.
-- `PROVIDERS = ['q_cli', 'claude_code']` enumeration used for validation.
+- `PROVIDERS = ['claude_code']` enumeration used for validation.
 - Server defaults `SERVER_HOST = "localhost"`, `SERVER_PORT = 9889`.
 
 Environment variables:
@@ -641,7 +641,7 @@ Systematic debugging approach:
 - Introduce a web dashboard for monitoring sessions and flows.
 - Enable configurable idle prompt detection per provider via YAML settings.
 - Provide a plugin system for custom inbox delivery channels (Slack, email).
-- Expand built-in providers beyond `q_cli` and `claude_code`.
+- Expand built-in providers beyond `claude_code`.
 - Add persistence for session transcripts in a search index (Elastic, OpenSearch).
 
 ## Appendix A: Provider Interface Contract
@@ -684,7 +684,7 @@ Agent profiles live in markdown files with YAML frontmatter:
 ---
 name: code_supervisor
 description: Lead agent that coordinates worker agents for software development tasks.
-default_provider: q_cli
+default_provider: claude_code
 tags: [engineering, supervisor]
 ---
 
