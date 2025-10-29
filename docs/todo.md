@@ -65,17 +65,17 @@
   - Draft `docs/approval-guide.md` describing queue format, CLI usage, and audit log strategy.
 
 - [ ] **Quality gates**
-  - Add pytest suites covering services, providers, API routers, and CLI commands.
+  - Add pytest suites covering providers, CLI commands, and utility layers.
   - Configure CI (GitHub Actions) to run `ruff`, `black`, `mypy`, and `pytest` gates.
   - Establish a lean testing strategy (KISS + SOLID aligned):
     1. **Fixtures & harness**: ✅ `tests/conftest.py` creates temp HOME/SQLite + stub tmux/provider manager for isolated runs.
-    2. **Terminal & session services (highest priority)**: ✅ covered via `tests/test_services.py` using stub tmux/providers to validate create/send/capture/delete workflows and cleanup semantics.
+    2. **Terminal & session services**: ✅ covered via `tests/test_services.py` using stub tmux/providers to validate create/send/capture/delete workflows and cleanup semantics.
     3. **Inbox & approval services**: ✅ request/approve/deny flows validated in `tests/test_services.py`, including audit log entries and worker/supervisor notifications.
     4. **API routers**: ✅ exercised with FastAPI `TestClient` in `tests/test_api.py`, covering session lifecycle, terminal IO, approval queueing, and metadata persistence.
-    5. **CLI commands**: use Click `CliRunner` with patched API clients to confirm command arguments, error messages, and output formatting without spawning real sessions.
-    6. **Provider logic**: unit-test Claude Code and Q CLI providers’ status detection / response extraction using captured pane snippets; mock tmux interactions to keep tests fast.
-    7. **Utilities & pathing**: add focused tests for directory bootstrap, ID generation, and logging helpers to catch regressions in shared utilities.
-    8. **Integration smoke**: optional end-to-end test that runs against the `test-workspace` scenario with all subsystems stubbed, ensuring the orchestrated workflow remains simple to validate.
+    5. **CLI commands**: add Click `CliRunner` tests that patch `_request` to assert argument parsing, error handling, and JSON formatting without spawning real sessions.
+    6. **Provider logic**: build claude_code provider tests that mock `capture_pane` history to verify status transitions and response extraction; add a smoke test for provider cleanup hooks.
+    7. **Utilities & pathing**: cover ID generation, directory bootstrapping, and log piping helpers to guard against regressions.
+    8. **Integration smoke**: optional end-to-end test that scripts the `test-workspace/add.js` scenario via orchestrated sends, using the stub stack for determinism.
 
 - [ ] **Packaging & release**
   - Validate `uv build` artifacts, smoke-test CLI via `uv tool run agent-conductor --help`.
