@@ -1,0 +1,31 @@
+Agent Conductor Test Results
+============================
+
+1. Fixed tmux pipe_pane bug:
+   - Issue: libtmux Pane objects don't have pipe_pane() method
+   - Fix: Use pane.cmd("pipe-pane", ...) instead
+   - Status: ✓ FIXED
+
+2. Fixed Claude Code provider:
+   - Issue: claude code doesn't support --profile flag
+   - Fix: Removed --profile from startup command
+   - Status: ✓ FIXED
+
+3. Environment Setup:
+   - Initialized ~/.conductor directories
+   - SQLite database created
+   - Log directories created
+   - Status: ✓ COMPLETE
+
+4. Test Files Created:
+   - add.js: Simple addition function
+   - test-conductor.sh: Integration test script
+   - Status: ✓ COMPLETE
+
+Next Steps:
+-----------
+- API server should be running on localhost:9889
+- Can launch supervisor sessions with claude_code provider
+- Can spawn worker terminals in existing sessions
+- Can send commands and retrieve output
+- Can test approval workflow
