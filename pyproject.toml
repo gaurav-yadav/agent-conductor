@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "CLI Agent Conductor orchestrator and tooling."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
   { name = "Agent Conductor Authors" }
 ]
@@ -12,7 +12,6 @@ keywords = ["agents", "cli", "orchestration", "tmux"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent"
 ]
 dependencies = [
@@ -34,7 +33,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.uv]
 package = true
-dev-dependencies = [
+
+[dependency-groups]
+dev = [
   "pytest>=8.2",
   "pytest-asyncio>=0.23",
   "pytest-cov>=5.0",
@@ -72,6 +73,12 @@ testpaths = ["tests"]
 [tool.coverage.run]
 branch = true
 source = ["agent_conductor"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"agent_conductor" = ["agent_store/*.md"]
 
 [project.scripts]
 agent-conductor = "agent_conductor.cli.main:cli"

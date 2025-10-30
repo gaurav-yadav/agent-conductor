@@ -7,6 +7,7 @@ import click
 import httpx
 
 from agent_conductor.clients.database import init_db
+from agent_conductor.utils import agent_profiles
 from agent_conductor.utils.logging import setup_logging
 from agent_conductor.utils.pathing import ensure_runtime_directories
 
@@ -36,6 +37,28 @@ def init() -> None:
     ensure_runtime_directories()
     init_db()
     click.echo("Agent Conductor environment initialized.")
+
+
+@cli.command()
+@click.argument("source")
+@click.option("--name", help="Override the stored filename (defaults to source name).")
+@click.option(
+    "--scope",
+    type=click.Choice(["user", "project"]),
+    default="user",
+    show_default=True,
+    help="Install into the global user store or the project-local .conductor directory.",
+)
+@click.option("--force/--no-force", default=False, show_default=True, help="Overwrite existing file.")
+def install(source: str, name: Optional[str], scope: str, force: bool) -> None:
+    """Install an agent persona from bundled profiles or a local file."""
+    try:
+        result = agent_profiles.install_agent_profile(
+            source, name=name, scope=scope, force=force  # type: ignore[arg-type]
+        )
+    except agent_profiles.AgentProfileError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(json.dumps(result, indent=2))
 
 
 @cli.command()
@@ -166,6 +189,22 @@ def approvals(status: Optional[str]) -> None:
     suffix = f"?status_filter={status}" if status else ""
     result = _request("GET", f"/approvals{suffix}")
     click.echo(json.dumps(result, indent=2))
+
+
+@cli.command("personas")
+@click.option("--bundled/--no-bundled", default=True, show_default=True, help="Include bundled personas.")
+@click.option(
+    "--installed/--no-installed",
+    default=True,
+    show_default=True,
+    help="Include installed personas (user and project scopes).",
+)
+def personas(bundled: bool, installed: bool) -> None:
+    """List available personas from bundled and installed stores."""
+    catalog = agent_profiles.get_persona_catalog(
+        include_bundled=bundled, include_installed=installed
+    )
+    click.echo(json.dumps(catalog, indent=2))
 
 
 @cli.group()

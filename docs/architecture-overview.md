@@ -404,8 +404,8 @@ Updating `constants.py` and the setup scripts is required to fully adopt the new
 
 - `conductor launch`: POST `/sessions`, attach to tmux unless `--headless`.
 - `conductor launch --session-name demo --provider claude_code`: Creates session with explicit name and provider.
-- `conductor install --profile path/to/profile.md`: Copies an agent profile into the context directory.
-- `conductor install --builtin code_supervisor`: Installs bundled profiles from `agent_store/`.
+- `agent-conductor install path/to/profile.md`: Copies an agent profile into the context directory.
+- `agent-conductor install developer`: Installs bundled profiles from `agent_store/`.
 - `conductor flow add flows/daily.md`: Registers a flow file and schedules it.
 - `conductor flow list`: Displays stored flows along with next run time.
 - `conductor flow enable <name>` / `disable <name>`: Toggles flow execution.

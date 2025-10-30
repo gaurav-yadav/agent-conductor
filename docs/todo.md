@@ -78,8 +78,22 @@
     8. **Integration smoke**: optional end-to-end test that scripts the `test-workspace/add.js` scenario via orchestrated sends, using the stub stack for determinism.
 
 - [ ] **Packaging & release**
-  - Validate `uv build` artifacts, smoke-test CLI via `uv tool run agent-conductor --help`.
-  - Prepare changelog and release instructions; publish to PyPI when stable.
+  - Tag releases with semantic versions and publish GitHub release notes per `docs/release-checklist.md`.
+  - Optional: publish wheels/sdists to PyPI once RC feedback is addressed.
 
 - [ ] **Post-MVP backlog**
   - Replace JSON queue fallbacks with first-class approval APIs, expand provider catalog, integrate metrics/dashboards, and explore remote execution support.
+
+- [x] **Persona install experience** (baseline CLI shipped; future enhancements tracked separately)
+
+## Milestones
+
+1. **Release Candidate 1**
+   - Finish package data wiring and installation docs.
+   - Generate test build, verify install steps, and publish RC tag for internal validation.
+2. **Persona Install MVP**
+   - Ship `agent-conductor install` + list commands with local/bundled support.
+   - Update documentation and TODO to reflect remaining enhancements (URL installs, removals).
+3. **General Availability**
+   - Address feedback from RC, finalize changelog, publish v0.x tag, push to PyPI if desired.
+   - Announce release instructions and onboarding guide for external users.

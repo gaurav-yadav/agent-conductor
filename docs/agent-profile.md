@@ -27,7 +27,25 @@ Conductor launches agents by reading profile files from the agent context direct
 - Default install path: `~/.conductor/agent-context/<profile-name>.md`
 - Bundled examples: `src/agent_conductor/agent_store/*.md`
 - Flow references: frontmatter `name` is used when flows or CLI commands specify an agent profile.
-- Temporary staging: the `conductor install` command supports installing directly from URLs or local paths, copying the file into the context directory.
+- Temporary staging: the `agent-conductor install` command supports installing directly from URLs or local paths, copying the file into the context directory.
+- Project-specific overrides: run `agent-conductor install <source> --scope project` to place a profile in the current repository’s `.conductor/agent-context/` directory. Project profiles take precedence over user-level installs when launching agents.
+
+### Installing Personas
+
+Use the CLI to copy bundled personas or custom profiles into your local catalog:
+
+```bash
+# Copy a bundled profile into your user context (~/.conductor/agent-context)
+agent-conductor install developer
+
+# Install directly from a local file into the current repository
+agent-conductor install ./my-custom-agent.md --scope project
+
+# Inspect available personas
+agent-conductor personas
+```
+
+Installed profiles keep their original frontmatter and become available to `conductor launch --agent-profile <name>` and `conductor worker` invocations.
 
 Bundled profiles include:
 - `conductor` – Supervisor persona that coordinates specialists and enforces workflow guardrails.
@@ -206,7 +224,7 @@ When the rename lands, update references accordingly.
 
 ## Testing Profiles Locally
 
-1. Place the profile in `~/.conductor/agent-context/` (or use `conductor install ./path/to/profile.md`).
+1. Place the profile in `~/.conductor/agent-context/` (or use `agent-conductor install ./path/to/profile.md`).
 2. Launch a test session: `conductor launch --agents <profile-name> --headless`.
 3. Observe the terminal log under `~/.conductor/logs/terminal/<terminal_id>.log`.
 4. Verify MCP tools are available by running `help tools` (provider-specific) or invoking a simple `send_message`.
@@ -222,8 +240,8 @@ Automated validation ideas:
 - Commit profiles to version control (for example, under `agent_store/`).
 - Use semantic filenames (`001_supervisor.md`) if you manage many variants.
 - Provide changelog entries when updating significant instructions.
-- For remote distribution, host profiles on HTTPS endpoints and reference them via `conductor install https://...`.
-- Consider packaging bundles with the CLI using entry points so `conductor install <name>` retrieves them automatically.
+- For remote distribution, host profiles on HTTPS endpoints and reference them via `agent-conductor install https://...`.
+- Consider packaging bundles with the CLI using entry points so `agent-conductor install <name>` retrieves them automatically.
 
 ## Troubleshooting
 

@@ -13,6 +13,27 @@ Refer to `Agent.md` for agent-facing instructions, `docs/architecture-overview.m
 
 Install `jq`/`tmux` via your system package manager (`brew install jq tmux` on macOS).
 
+## Installation
+
+Agent Conductor ships as an installable CLI. The recommended path is via `uv tool install` straight from Git (pin to a release tag when available).
+
+```bash
+# Install or upgrade from the latest main branch
+uv tool install --force-reinstall --upgrade \
+  --from git+https://github.com/gaurav-yadav/agent-conductor.git \
+  agent-conductor
+
+# Pin to a specific release tag (recommended for stability)
+uv tool install --force-reinstall --upgrade \
+  --from git+https://github.com/gaurav-yadav/agent-conductor.git@v0.1.0-rc1 \
+  agent-conductor
+
+# Verify the CLI is on PATH and ready
+agent-conductor --help
+```
+
+The CLI depends on a running FastAPI server. After installation, follow the first-time setup commands below to initialize runtime directories and start the API.
+
 ## First-Time Setup
 
 ```bash
@@ -66,6 +87,25 @@ uv run agent-conductor output <terminal-id> --mode last
 ```
 
 The `test-workspace/` directory provides sample scripts for end-to-end smoke tests (`test-workspace/add.js`, etc.).
+
+### Installing Persona Profiles
+
+Bundle profiles (`conductor`, `developer`, `tester`, `reviewer`) are available immediately. To customize or add your own personas, install them into your user or project catalog:
+
+```bash
+# Copy a bundled profile into your user catalog
+agent-conductor install developer
+
+# Install a custom profile for the current repository
+agent-conductor install ./my-custom-agent.md --scope project
+
+# List bundled and installed personas
+agent-conductor personas
+```
+
+Profiles installed in a project-local `.conductor/agent-context/` directory take precedence over user-level installs, allowing per-repo overrides without touching global state.
+
+> Release managers: see `docs/release-checklist.md` for tagging, verification, and announcement steps.
 
 ## Teardown
 
