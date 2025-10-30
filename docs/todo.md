@@ -88,6 +88,13 @@
   - [ ] Add CLI helpers/documentation for acknowledging forwarded prompts.
   - [ ] **Future**: Extend with policy-driven auto-approvals/denials for trusted folders or actions.
 
+- [ ] **Web dashboard (HTMX/Jinja)**
+  - Scaffold FastAPI router (`/dashboard`) rendering sessions, prompts, and approvals.
+  - Bundle templates/static assets with the package; document installation requirements.
+  - Implement session actions (spawn/close workers, send prompt responses) via existing REST endpoints.
+  - Poll inbox/approval state to highlight outstanding operator actions.
+  - Add a minimal automated test ensuring the dashboard route responds successfully.
+
 - [ ] **Packaging & release**
   - Tag releases with semantic versions and publish GitHub release notes per `docs/release-checklist.md`.
   - Optional: publish wheels/sdists to PyPI once RC feedback is addressed.

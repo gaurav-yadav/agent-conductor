@@ -94,6 +94,22 @@ agent-conductor output <terminal-id> --mode last
 
 The `test-workspace/` directory provides sample scripts for end-to-end smoke tests (`test-workspace/add.js`, etc.).
 
+### Web Dashboard
+
+The FastAPI server now ships with a lightweight dashboard that surfaces active sessions, worker prompts, and pending approvals.
+
+1. Start the API server:
+   ```bash
+   uv run python -m uvicorn agent_conductor.api.main:app --reload
+   ```
+2. Open `http://127.0.0.1:9889/dashboard` in your browser.
+3. From the dashboard you can:
+   - Launch or close workers via the **Sessions** table.
+   - Review `[PROMPT]` notifications and send the suggested response commands.
+   - Approve or deny human-in-the-loop requests.
+
+Actions performed in the dashboard call the same REST endpoints as the CLI, so terminal operators can see updates immediately.
+
 ### Installing Persona Profiles
 
 Bundle profiles (`conductor`, `developer`, `tester`, `reviewer`) are available immediately. To customize or add your own personas, install them into your user or project catalog:

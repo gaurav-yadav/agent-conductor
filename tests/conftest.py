@@ -225,6 +225,12 @@ def api_client(terminal_service, session_service, inbox_service, approval_servic
     app.router.lifespan_context = noop_lifespan
     app.dependency_overrides.update(overrides)
 
+    if not getattr(app.state, "ui_router_registered", False):
+        from agent_conductor.ui import create_router
+
+        app.include_router(create_router(session_service, inbox_service, approval_service))
+        app.state.ui_router_registered = True
+
     with TestClient(app) as client:
         yield client
 

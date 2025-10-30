@@ -27,6 +27,7 @@ from agent_conductor.services.cleanup_service import CleanupService
 from agent_conductor.services.flow_service import FlowService
 from agent_conductor.services.inbox_service import InboxService
 from agent_conductor.services.prompt_service import PromptWatcher
+from agent_conductor.ui import create_router as create_ui_router
 from agent_conductor.services.session_service import SessionService
 from agent_conductor.services.terminal_service import TerminalService
 from agent_conductor.utils.logging import setup_logging
@@ -85,6 +86,9 @@ async def startup_event() -> None:
     app.state.session_service = session_service
     app.state.cleanup_service = cleanup_service
     app.state.prompt_watcher = prompt_watcher
+    if not getattr(app.state, "ui_router_registered", False):
+        app.include_router(create_ui_router(session_service, inbox_service, approval_service))
+        app.state.ui_router_registered = True
     app.state.background_tasks = [
         asyncio.create_task(_cleanup_loop(cleanup_service)),
         asyncio.create_task(_inbox_loop(inbox_service)),

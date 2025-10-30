@@ -48,6 +48,9 @@ agent-conductor approvals --status PENDING
 # Approve or deny a request
 agent-conductor approve <request-id>
 agent-conductor deny <request-id> --reason "Too dangerous"
+
+# Open the dashboard (optional)
+open http://127.0.0.1:9889/dashboard  # use xdg-open/start depending on OS
 ```
 
 ### Testing & Quality

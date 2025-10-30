@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Agent Conductor Dashboard</title>
+  <link rel="stylesheet" href="https://unpkg.com/chota@0.9.2/dist/chota.min.css">
+  <style>
+    body { padding: 1.5rem; }
+    .status-ready { color: #2b7a0b; }
+    .status-running { color: #b58900; }
+    .status-completed { color: #586e75; }
+    .status-error { color: #dc322f; }
+    .prompt { border-left: 4px solid #b58900; padding-left: 1rem; margin-bottom: 1rem; }
+    .approvals { border-left: 4px solid #268bd2; padding-left: 1rem; margin-bottom: 1rem; }
+    .spacer { margin-top: 1.5rem; }
+    pre { background: #f7f7f7; padding: 0.5rem; }
+  </style>
+</head>
+<body>
+  <header class="row">
+    <div class="col">
+      <h1>Agent Conductor Dashboard</h1>
+      <p class="text-secondary">Monitor sessions, respond to prompts, and manage approvals in one place.</p>
+    </div>
+    <div class="col text-right">
+      <button class="button" onclick="refreshDashboard()">Refresh</button>
+    </div>
+  </header>
+
+  <section>
+    <h2>Sessions</h2>
+    {% if sessions %}
+      {% for session in sessions %}
+        <article class="card">
+          <header class="card-header">
+            <div>
+              <strong>{{ session.name }}</strong>
+            </div>
+            <div>
+              <button class="button secondary" onclick="closeSession('{{ session.name }}')">Close session</button>
+            </div>
+          </header>
+          <div class="card-body">
+            <table class="striped">
+              <thead>
+                <tr>
+                  <th>Window</th>
+                  <th>Terminal ID</th>
+                  <th>Provider</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for terminal in session.terminals %}
+                  <tr>
+                    <td>{{ terminal.window_name }}</td>
+                    <td><code>{{ terminal.id }}</code></td>
+                    <td>{{ terminal.provider }}</td>
+                    <td class="status-{{ terminal.status.value | lower }}">{{ terminal.status.value }}</td>
+                    <td>
+                      {% if not terminal.window_name.startswith('supervisor-') %}
+                        <button class="button outline" onclick="closeTerminal('{{ terminal.id }}')">Close</button>
+                      {% else %}
+                        <em>Supervisor</em>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            <div class="row">
+              <div class="col">
+                <label>Launch worker</label>
+                <div class="row">
+                  <div class="col">
+                    <select id="worker-profile-{{ session.name }}">
+                      {% for profile in bundled_personas %}
+                        <option value="{{ profile }}">{{ profile }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="col">
+                    <button class="button" onclick="spawnWorker('{{ session.name }}')">Spawn</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      {% endfor %}
+    {% else %}
+      <p>No active sessions. Use <code>agent-conductor launch</code> to start one.</p>
+    {% endif %}
+  </section>
+
+  <section class="spacer">
+    <h2>Pending Prompts</h2>
+    {% set has_prompts = false %}
+    {% for supervisor_id, messages in inbox_summary.items() %}
+      {% for message in messages %}
+        {% if '[PROMPT]' in message.message %}
+          {% set has_prompts = true %}
+          <div class="prompt">
+            <p><strong>{{ message.message.split('\n')[0] }}</strong></p>
+            <pre>{{ '\n'.join(message.message.split('\n')[1:]) }}</pre>
+          </div>
+        {% endif %}
+      {% endfor %}
+    {% endfor %}
+    {% if not has_prompts %}
+      <p class="text-secondary">No worker prompts awaiting attention.</p>
+    {% endif %}
+  </section>
+
+  <section class="spacer">
+    <h2>Pending Approvals</h2>
+    {% if approvals %}
+      {% for approval in approvals %}
+        <div class="approvals">
+          <p><strong>Terminal:</strong> {{ approval.terminal_id }} | <strong>Command:</strong> <code>{{ approval.command_text }}</code></p>
+          <button class="button primary" onclick="approve({{ approval.id }})">Approve</button>
+          <button class="button secondary" onclick="deny({{ approval.id }})">Deny</button>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="text-secondary">No pending approvals.</p>
+    {% endif %}
+  </section>
+
+  <script>
+    async function refreshDashboard() {
+      window.location.reload();
+    }
+
+    async function spawnWorker(sessionName) {
+      const select = document.getElementById(`worker-profile-${sessionName}`);
+      const profile = select.value;
+      await fetch(`/sessions/${sessionName}/terminals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'claude_code', role: 'worker', agent_profile: profile })
+      });
+      refreshDashboard();
+    }
+
+    async function closeSession(sessionName) {
+      if (!confirm(`Close session ${sessionName}?`)) return;
+      await fetch(`/sessions/${sessionName}`, { method: 'DELETE' });
+      refreshDashboard();
+    }
+
+    async function closeTerminal(terminalId) {
+      if (!confirm(`Close terminal ${terminalId}?`)) return;
+      await fetch(`/terminals/${terminalId}`, { method: 'DELETE' });
+      refreshDashboard();
+    }
+
+    async function approve(id) {
+      await fetch(`/approvals/${id}/approve`, { method: 'POST' });
+      refreshDashboard();
+    }
+
+    async function deny(id) {
+      const reason = prompt('Optional reason for denial:');
+      await fetch(`/approvals/${id}/deny`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason })
+      });
+      refreshDashboard();
+    }
+  </script>
+</body>
+</html>
