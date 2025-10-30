@@ -10,7 +10,7 @@ Each terminal runs the `agent-conductor` CLI via `uv`. Messages are routed by ca
 - Supervisor (Conductor persona) prepares instructions and tells the operator which worker should receive them.
 - Operator or worker runs:
   ```bash
-  uv run agent-conductor send <terminal-id> --message "..." [--require-approval ...]
+  agent-conductor send <terminal-id> --message "..." [--require-approval ...]
   ```
 - Messages are injected immediately into the target tmux window.
 - Workers reply using the same command, so the supervisor receives confirmations or status updates.
@@ -23,6 +23,7 @@ Each terminal runs the `agent-conductor` CLI via `uv`. Messages are routed by ca
 **Limitations**
 - Requires knowing terminal IDs (the conductor persona calls this out so command snippets are easy to copy).
 - Humans or scripts must orchestrate the CLI calls; messages can interleave if a terminal is mid-response.
+- Interactive prompts (e.g., Claude Code requesting numbered choices) are forwarded to the supervisor inbox as `[PROMPT]` messages; you still need to send the final response via `agent-conductor send <worker-id> --message "<choice>"`.
 
 **How it works**
 - Messages are stored in SQLite via `/terminals/{id}/inbox/messages`.
@@ -53,9 +54,9 @@ Each terminal runs the `agent-conductor` CLI via `uv`. Messages are routed by ca
 Supervisors (Conductor persona) currently rely on the operator to launch specialist terminals. When the conductor requests a role, run:
 
 ```bash
-uv run agent-conductor worker <session-name> --provider claude_code --agent-profile developer
-uv run agent-conductor worker <session-name> --provider claude_code --agent-profile tester
-uv run agent-conductor worker <session-name> --provider claude_code --agent-profile reviewer
+agent-conductor worker <session-name> --provider claude_code --agent-profile developer
+agent-conductor worker <session-name> --provider claude_code --agent-profile tester
+agent-conductor worker <session-name> --provider claude_code --agent-profile reviewer
 ```
 
 Once a worker exists, the conductor references it by window name (`worker-developer`, etc.) and continues coordination through the chosen communication strategy. Future enhancements may expose worker launch as a callable tool so the conductor can request it programmatically.

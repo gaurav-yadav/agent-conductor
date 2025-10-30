@@ -77,6 +77,17 @@
     7. **Utilities & pathing**: cover ID generation, directory bootstrapping, and log piping helpers to guard against regressions.
     8. **Integration smoke**: optional end-to-end test that scripts the `test-workspace/add.js` scenario via orchestrated sends, using the stub stack for determinism.
 
+- [x] **Session launch UX**
+  - ✅ Add `agent-conductor launch --with-workers <profile,...>` to start common specialists automatically.
+  - ✅ Emit a launch summary (session, supervisor ID, worker IDs) so operators can copy commands quickly.
+  - ✅ Update conductor persona docs to rely on the new summary instead of hard-coded snippets.
+
+- [ ] **Interactive prompt routing**
+  - ✅ Detect Claude Code multiple-choice prompts and forward them to the supervisor inbox with response instructions.
+  - ✅ Suppress duplicate notifications for the same prompt; reset once the worker resumes normal output.
+  - [ ] Add CLI helpers/documentation for acknowledging forwarded prompts.
+  - [ ] **Future**: Extend with policy-driven auto-approvals/denials for trusted folders or actions.
+
 - [ ] **Packaging & release**
   - Tag releases with semantic versions and publish GitHub release notes per `docs/release-checklist.md`.
   - Optional: publish wheels/sdists to PyPI once RC feedback is addressed.

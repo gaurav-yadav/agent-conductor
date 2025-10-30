@@ -35,6 +35,7 @@ class ClaudeCodeProvider(BaseProvider):
     ) -> None:
         super().__init__(terminal_id, session_name, window_name, agent_profile, tmux)
         self._initialized = False
+        self._last_prompt_signature: Optional[int] = None
 
     def build_startup_command(self) -> Optional[str]:
         """Not used – command is assembled in initialize."""
@@ -147,3 +148,56 @@ class ClaudeCodeProvider(BaseProvider):
                     self.window_name,
                 )
         self._status = TerminalStatus.COMPLETED
+
+    def detect_interactive_prompt(self) -> Optional[str]:
+        """Return the latest Claude Code choice prompt, if one is awaiting input."""
+        history = self.tmux.capture_pane(self.session_name, self.window_name)
+        snippet = self._extract_choice_prompt(history)
+
+        if not snippet:
+            self._last_prompt_signature = None
+            return None
+
+        signature = hash(snippet)
+        if signature == self._last_prompt_signature:
+            return None
+
+        self._last_prompt_signature = signature
+        return snippet
+
+    @staticmethod
+    def _extract_choice_prompt(history: str) -> Optional[str]:
+        if not history:
+            return None
+
+        lines = history.rstrip().splitlines()
+        prompt_index: Optional[int] = None
+        for idx in range(len(lines) - 1, -1, -1):
+            line = lines[idx]
+            if re.search(WAITING_USER_ANSWER_PATTERN, line) or line.strip().startswith("❯"):
+                prompt_index = idx
+                break
+
+        if prompt_index is None:
+            return None
+
+        header_lines: list[str] = []
+        i = prompt_index - 1
+        while i >= 0 and lines[i].strip() and not lines[i].strip().startswith(">"):
+            header_lines.insert(0, re.sub(ANSI_CODE_PATTERN, "", lines[i]).strip())
+            i -= 1
+
+        option_lines: list[str] = []
+        for line in lines[prompt_index:]:
+            stripped = re.sub(ANSI_CODE_PATTERN, "", line).rstrip()
+            if not stripped:
+                break
+            if stripped.lstrip().startswith(">"):
+                break
+            option_lines.append(stripped)
+
+        if not option_lines:
+            return None
+
+        body = header_lines + option_lines
+        return "\n".join(body).strip()

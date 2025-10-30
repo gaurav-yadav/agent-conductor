@@ -13,7 +13,7 @@ Core architecture: FastAPI REST server manages tmux sessions, SQLite persistence
 ### Environment Setup
 ```bash
 # Initialize local directories and SQLite schema
-uv run agent-conductor init
+agent-conductor init
 
 # Install dependencies
 uv sync
@@ -25,29 +25,29 @@ uv sync
 uv run uvicorn agent_conductor.api.main:app --reload
 
 # Launch a new supervisor session (in another terminal)
-uv run agent-conductor launch --provider claude_code --agent-profile supervisor
+agent-conductor launch --provider claude_code --agent-profile supervisor
 
 # Spawn a worker in an existing session
-uv run agent-conductor worker <session-name> --provider claude_code --agent-profile tester
+agent-conductor worker <session-name> --provider claude_code --agent-profile tester
 
 # List all active sessions
-uv run agent-conductor sessions
+agent-conductor sessions
 
 # Send a command to a terminal
-uv run agent-conductor send <terminal-id> --message "echo hello"
+agent-conductor send <terminal-id> --message "echo hello"
 
 # Get terminal output
-uv run agent-conductor output <terminal-id> --mode last
+agent-conductor output <terminal-id> --mode last
 
 # Send a command requiring approval
-uv run agent-conductor send <terminal-id> --message "rm -rf temp" --require-approval --supervisor <supervisor-id>
+agent-conductor send <terminal-id> --message "rm -rf temp" --require-approval --supervisor <supervisor-id>
 
 # List pending approvals
-uv run agent-conductor approvals --status PENDING
+agent-conductor approvals --status PENDING
 
 # Approve or deny a request
-uv run agent-conductor approve <request-id>
-uv run agent-conductor deny <request-id> --reason "Too dangerous"
+agent-conductor approve <request-id>
+agent-conductor deny <request-id> --reason "Too dangerous"
 ```
 
 ### Testing & Quality
@@ -205,30 +205,30 @@ The CLI is exclusively an HTTP client—it never manipulates tmux or the databas
 **Manual smoke test** (see `docs/test-plan.md` for complete workflow):
 ```bash
 # 1. Initialize and start server
-uv run agent-conductor init
+agent-conductor init
 uv run uvicorn agent_conductor.api.main:app --reload
 
 # 2. Launch supervisor and capture IDs
-SUPERVISOR_JSON=$(uv run agent-conductor launch --provider claude_code --agent-profile supervisor)
+SUPERVISOR_JSON=$(agent-conductor launch --provider claude_code --agent-profile supervisor)
 SUPERVISOR_ID=$(echo "$SUPERVISOR_JSON" | jq -r '.id')
 SESSION_NAME=$(echo "$SUPERVISOR_JSON" | jq -r '.session_name')
 
 # 3. Send a task to supervisor
-uv run agent-conductor send "$SUPERVISOR_ID" \
+agent-conductor send "$SUPERVISOR_ID" \
   --message "Create a file add.js with: function add(a,b){return a+b;} console.log(add(2,3));"
 
 # 4. Check output
-uv run agent-conductor output "$SUPERVISOR_ID" --mode last
+agent-conductor output "$SUPERVISOR_ID" --mode last
 
 # 5. Spawn a worker
-WORKER_JSON=$(uv run agent-conductor worker "$SESSION_NAME" --provider claude_code --agent-profile tester)
+WORKER_JSON=$(agent-conductor worker "$SESSION_NAME" --provider claude_code --agent-profile tester)
 WORKER_ID=$(echo "$WORKER_JSON" | jq -r '.id')
 
 # 6. Test approval workflow
-uv run agent-conductor send "$WORKER_ID" \
+agent-conductor send "$WORKER_ID" \
   --message "rm -rf *" --require-approval --supervisor "$SUPERVISOR_ID"
-uv run agent-conductor approvals --status PENDING
-uv run agent-conductor approve <request-id>
+agent-conductor approvals --status PENDING
+agent-conductor approve <request-id>
 ```
 
 When adding automated tests:

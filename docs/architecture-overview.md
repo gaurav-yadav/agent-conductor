@@ -164,7 +164,7 @@ The reference implementation organizes code under `src/agent_conductor`. Each su
 ### Conductor CLI
 
 The CLI entry point resides in `src/agent_conductor/cli/main.py` and wires together Click commands from `commands/`. Major commands include:
-- `launch` (`commands/launch.py`): Creates a new session and supervisor terminal, optionally attaching the user to tmux.
+- `launch` (`commands/launch.py`): Creates a new session and supervisor terminal, optionally spawning worker personas via `--with-worker` and printing a summary for quick copy/paste.
 - `install` (`commands/install.py`): Installs agent profiles from bundled templates, local files, or remote sources.
 - `shutdown` (`commands/shutdown.py`): Stops the FastAPI server process.
 - `flow` (`commands/flow.py`): Manages scheduled flows (add, list, enable, disable, remove).
@@ -173,8 +173,9 @@ The CLI entry point resides in `src/agent_conductor/cli/main.py` and wires toget
 Every command assembles the correct REST request and handles user-facing errors. For example, `launch` validates the provider against `constants.PROVIDERS`, posts to `/sessions`, prints the session metadata, and attaches to tmux unless `--headless` is used.
 
 ```bash
-# Example: Launch a supervisor using the claude_code provider and auto session name
-conductor launch --agents code_supervisor --provider claude_code
+# Example: Launch a supervisor plus common specialists
+agent-conductor launch --provider claude_code --agent-profile conductor \
+  --with-worker developer --with-worker tester --with-worker reviewer
 ```
 
 The CLI avoids direct tmux manipulation. Even the attach step shells out to `tmux attach-session` only after the server responds with a created session.
@@ -185,7 +186,7 @@ The CLI avoids direct tmux manipulation. Even the attach step shells out to `tmu
 - Uses FastAPI with lifespan management to initialize logging, the SQLite schema, the cleanup worker, the flow daemon, and the inbox file watcher.
 - Defines request/response models under `src/agent_conductor/models/`.
 - Normalizes errors into HTTP responses (400 for validation issues, 404 for unknown resources, 500 for server errors).
-- Runs the flow daemon (background coroutine) and inbox watcher (watchdog `PollingObserver`) for continuous duties.
+- Runs background coroutines for cleanup, inbox delivery, and interactive prompt forwarding (workers notify the supervisor when a choice is required).
 - Lists endpoints for sessions, terminals, inbox operations, flow management, health check, and provider status inspection.
 
 The server is designed to run locally via `uv run python -m uvicorn agent_conductor.api.main:app --reload` (or through the packaging entry point) and listens on `constants.SERVER_HOST:constants.SERVER_PORT`.
@@ -195,7 +196,7 @@ The server is designed to run locally via `uv run python -m uvicorn agent_conduc
 Services hide orchestration details and enforce consistent workflows:
 - `terminal_service.py`: Generates IDs, creates tmux sessions or windows, initializes providers, wires log piping, forwards input, retrieves output, and handles cleanup.
 - `session_service.py`: Lists sessions, aggregates terminal metadata, and deletes sessions (including worker windows and provider teardown).
-- `inbox_service.py`: Watches terminal logs to detect idle prompts, stores queued messages, and delivers notifications to supervisors when workers reply.
+- `inbox_service.py`: Watches terminal logs to detect idle prompts, stores queued messages, delivers notifications to supervisors when workers reply, and works with the prompt watcher to forward multiple-choice questions.
 - `flow_service.py`: Parses flow files (frontmatter + markdown), runs optional scripts, renders prompt templates, and launches sessions based on schedules.
 - `cleanup_service.py`: Purges old sessions, inbox messages, and logs older than `constants.RETENTION_DAYS`.
 
@@ -444,10 +445,11 @@ All endpoints return JSON. Authentication is currently omitted because the serve
 
 ## Background Workers and Schedulers
 
-Three autonomous routines ensure Conductor remains responsive:
+Four autonomous routines ensure Conductor remains responsive:
 - **Cleanup Worker** (`cleanup_service.py`): Runs in a background thread, scans for sessions older than the retention window, deletes database rows, removes log files, and closes stray tmux sessions.
 - **Flow Daemon** (`flow_daemon` in `api/main.py`): Executes every 60 seconds, evaluating `db_get_flows_to_run()` and invoking `flow_service.execute_flow`.
-- **Inbox Watcher** (`LogFileHandler`): Uses `watchdog` to poll terminal log files. When it detects new lines containing provider-specific idle prompts, it calls `inbox_service.deliver_pending_messages`.
+- **Inbox Delivery Loop** (`inbox_service.deliver_all_pending`): Polls for queued inbox messages and injects them into the target terminal once it is idle.
+- **Prompt Watcher** (`prompt_service.PromptWatcher`): Inspects worker providers for multiple-choice prompts and forwards them to the supervisor inbox with response instructions.
 
 Each worker logs progress via Python's logging module, enabling operators to verify activity in the server console or log files.
 
