@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import click
 import httpx
@@ -65,15 +65,27 @@ def install(source: str, name: Optional[str], scope: str, force: bool) -> None:
 @click.option("--provider", required=True, help="Provider key (e.g., claude_code).")
 @click.option("--agent-profile", help="Agent profile name used for the terminal.")
 @click.option("--role", default="supervisor", show_default=True, help="Role for window naming.")
-def launch(provider: str, agent_profile: Optional[str], role: str) -> None:
+@click.option(
+    "--with-worker",
+    "with_workers",
+    multiple=True,
+    help="Agent profile(s) to spawn as workers immediately after launch.",
+)
+def launch(provider: str, agent_profile: Optional[str], role: str, with_workers: List[str]) -> None:
     """Launch a new session with a supervisor terminal."""
     payload = {
         "provider": provider,
         "agent_profile": agent_profile,
         "role": role,
     }
+    if with_workers:
+        payload["workers"] = [
+            {"provider": provider, "role": "worker", "agent_profile": profile}
+            for profile in with_workers
+        ]
     result = _request("POST", "/sessions", payload)
-    click.echo(json.dumps(result, indent=2))
+    session_summary = _request("GET", f"/sessions/{result['session_name']}")
+    click.echo(json.dumps(session_summary, indent=2))
 
 
 @cli.command("sessions")

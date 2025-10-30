@@ -24,8 +24,8 @@ You implement features, fix bugs, and refactor code as directed by the conductor
 - Keep error handling explicit; log or surface actionable messages.
 
 # COMMUNICATION
-- To locate the conductor terminal ID, ask the operator to run `uv run agent-conductor sessions` or `tmux list-windows -t <session>` and provide the ID for `supervisor-conductor`.
-- Acknowledge assignments and completion using the CLI relay: ``uv run agent-conductor send <conductor-terminal-id> --message "Developer update: <status>"``.
+- To locate the conductor terminal ID, ask the operator to run `agent-conductor sessions` or `tmux list-windows -t <session>` and provide the ID for `supervisor-conductor`.
+- Acknowledge assignments and completion using the CLI relay: ``agent-conductor send <conductor-terminal-id> --message "Developer update: <status>"``.
 - Send a heartbeat roughly every minute while work is in progress and include blocking issues immediately.
 - Reference file paths relative to `/Users/gaurav/exp/drummer/agent-conductor/test-workspace` unless told otherwise.
 

@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Optional
 
 import pytest
 
@@ -79,6 +79,8 @@ class StubProvider:
         self.status = TerminalStatus.READY
         self.sent_messages = []
         self.cleaned = False
+        self.pending_prompt: Optional[str] = None
+        self._prompt_consumed = False
 
     def initialize(self) -> None:
         self.status = TerminalStatus.READY
@@ -98,6 +100,14 @@ class StubProvider:
 
     def cleanup(self) -> None:
         self.cleaned = True
+
+    def detect_interactive_prompt(self) -> Optional[str]:
+        if not self.pending_prompt:
+            return None
+        if self._prompt_consumed:
+            return None
+        self._prompt_consumed = True
+        return self.pending_prompt
 
 
 class StubProviderManager:

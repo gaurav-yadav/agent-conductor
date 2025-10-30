@@ -38,7 +38,7 @@ The CLI depends on a running FastAPI server. After installation, follow the firs
 
 ```bash
 # 1. Initialize local runtime directories and SQLite database
-uv run agent-conductor init
+agent-conductor init
 
 # 2. Start the FastAPI server on the expected host/port (keep this running)
 uv run python -m uvicorn agent_conductor.api.main:app --reload --host 127.0.0.1 --port 9889
@@ -64,26 +64,32 @@ The script prints the session name and terminal IDs for each worker. It sends th
 
 ```bash
 # Start a conductor-supervised session
-uv run agent-conductor launch --provider claude_code --agent-profile conductor
+agent-conductor launch --provider claude_code --agent-profile conductor
 
-# Attach specialists (reuse <session-name> printed above)
-uv run agent-conductor worker <session-name> --provider claude_code --agent-profile developer
-uv run agent-conductor worker <session-name> --provider claude_code --agent-profile tester
-uv run agent-conductor worker <session-name> --provider claude_code --agent-profile reviewer
+# Optionally launch common workers immediately
+agent-conductor launch --provider claude_code --agent-profile conductor \
+  --with-worker developer \
+  --with-worker tester \
+  --with-worker reviewer
+
+# Attach specialists manually (reuse <session-name> printed above)
+agent-conductor worker <session-name> --provider claude_code --agent-profile developer
+agent-conductor worker <session-name> --provider claude_code --agent-profile tester
+agent-conductor worker <session-name> --provider claude_code --agent-profile reviewer
 ```
 
 ### Coordinating Work
 
-Use `uv run agent-conductor send <terminal-id> --message "..."` to relay instructions or status updates between terminals.
+Use `agent-conductor send <terminal-id> --message "..."` to relay instructions or status updates between terminals.
 
 Helper commands:
 
 ```bash
 # List active sessions and terminals
-uv run agent-conductor sessions
+agent-conductor sessions
 
 # Capture recent output
-uv run agent-conductor output <terminal-id> --mode last
+agent-conductor output <terminal-id> --mode last
 ```
 
 The `test-workspace/` directory provides sample scripts for end-to-end smoke tests (`test-workspace/add.js`, etc.).
@@ -105,6 +111,8 @@ agent-conductor personas
 
 Profiles installed in a project-local `.conductor/agent-context/` directory take precedence over user-level installs, allowing per-repo overrides without touching global state.
 
+When a worker needs an interactive decision, the supervisor inbox receives a `[PROMPT]` message with the relevant context and a suggested response command (for example, `agent-conductor send <worker-id> --message "1"`). Reply from the conductor terminal to keep all coordination in one pane.
+
 > Release managers: see `docs/release-checklist.md` for tagging, verification, and announcement steps.
 
 ## Teardown
@@ -117,7 +125,7 @@ Profiles installed in a project-local `.conductor/agent-context/` directory take
 AC_KILL_TMUX=false ./scripts/teardown_agents.sh
 
 # Manually close a single terminal if needed
-uv run agent-conductor close <terminal-id>
+agent-conductor close <terminal-id>
 ```
 
 ## Resetting a Broken Run
@@ -128,7 +136,7 @@ If tmux sessions or database entries get out of sync:
 # Stop the API server if it is running
 # then clear state and reinitialize
 rm ~/.conductor/db/conductor.db
-uv run agent-conductor init
+agent-conductor init
 
 # Remove any lingering tmux sessions
 tmux kill-server  # safe even if no server is running
@@ -136,4 +144,4 @@ tmux kill-server  # safe even if no server is running
 
 After this reset, restart the API server and relaunch the conductor + workers as shown in the quickstart above.
 
-> Note: If a tmux pane is closed manually or crashes, `uv run agent-conductor close <terminal-id>` now cleans up the database even when the tmux window no longer exists. The service logs a warning instead of failing with a 500 error.
+> Note: If a tmux pane is closed manually or crashes, `agent-conductor close <terminal-id>` now cleans up the database even when the tmux window no longer exists. The service logs a warning instead of failing with a 500 error.

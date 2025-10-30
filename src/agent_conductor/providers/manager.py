@@ -72,3 +72,6 @@ class ProviderManager:
     def status(self, terminal_id: str) -> TerminalStatus:
         provider = self.get_provider(terminal_id)
         return provider.get_status()
+
+    def iter_providers(self):
+        return self._providers.items()

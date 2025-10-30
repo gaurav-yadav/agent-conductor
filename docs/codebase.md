@@ -44,7 +44,7 @@ pyproject.toml               # uv/PEP 621 project metadata & tooling config
 ## Logical Overview
 
 ### Control Plane Boot
-1. `uv run agent-conductor init` → CLI ensures `~/.conductor` directories exist, initializes the SQLite schema.
+1. `agent-conductor init` → CLI ensures `~/.conductor` directories exist, initializes the SQLite schema.
 2. `uv run uvicorn agent_conductor.api.main:app` → FastAPI startup hook:
    - Calls `setup_logging()` and `ensure_runtime_directories()`.
    - Initializes SQLite engine, tmux provider manager, and all services.

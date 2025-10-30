@@ -73,3 +73,7 @@ class BaseProvider(ABC):
             raise ProviderInitializationError(
                 f"Required binary '{binary}' not found on PATH. Install it before launching the provider."
             )
+
+    def detect_interactive_prompt(self) -> Optional[str]:  # pragma: no cover - default noop
+        """Return a textual prompt requiring operator attention, or None if idle."""
+        return None

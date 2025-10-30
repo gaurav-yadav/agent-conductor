@@ -9,6 +9,7 @@ from agent_conductor.clients.database import (
 )
 from agent_conductor.models.enums import ApprovalStatus, InboxStatus, TerminalStatus
 from agent_conductor.services.inbox_service import InboxService
+from agent_conductor.services.prompt_service import PromptWatcher
 from agent_conductor.services.session_service import SessionService
 
 
@@ -121,6 +122,43 @@ def test_inbox_service_delivers_pending(terminal_service, provider_manager):
     with session_scope() as db:
         stored = db.get(InboxORM, message.id)
         assert stored.status == InboxStatus.DELIVERED
+
+
+def test_prompt_watcher_queues_prompts(
+    terminal_service,
+    session_service,
+    inbox_service,
+    provider_manager,
+):
+    supervisor = terminal_service.create_terminal("claude_code", "supervisor", "conductor")
+    worker = terminal_service.create_terminal(
+        "claude_code",
+        "worker",
+        "developer",
+        session_name=supervisor.session_name,
+    )
+
+    provider = provider_manager.providers[worker.id]
+    provider.pending_prompt = "Do you want to proceed?\n❯ 1. Yes\n  2. No"
+    provider._prompt_consumed = False
+
+    watcher = PromptWatcher(session_service, terminal_service, inbox_service)
+    watcher.scan()
+
+    messages = [msg for msg in inbox_service.list_messages(supervisor.id) if "[PROMPT]" in msg.message]
+    assert len(messages) == 1
+    assert "Do you want to proceed?" in messages[0].message
+
+    watcher.scan()
+    messages_again = [msg for msg in inbox_service.list_messages(supervisor.id) if "[PROMPT]" in msg.message]
+    assert len(messages_again) == 1
+
+    provider.pending_prompt = "Select option\n❯ 1. Continue"
+    provider._prompt_consumed = False
+    watcher.scan()
+
+    messages_final = [msg for msg in inbox_service.list_messages(supervisor.id) if "[PROMPT]" in msg.message]
+    assert len(messages_final) == 2
 
 
 def _read_last_audit_entry():

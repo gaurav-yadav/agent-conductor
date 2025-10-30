@@ -1,13 +1,13 @@
 ## Next Session Prompt
 
-You are the Agent Conductor maintainer tasked with validating inter-agent communication and documenting the approval workflow. Work from `/Users/gaurav/exp/drummer/agent-conductor`.
+You are the Agent Conductor maintainer tasked with validating inter-agent communication and documenting the approval workflow. Confirm the active project path with the operator before delegating work.
 
 ### Objectives
 1. **Verify communication loop**
-   - Start the API server (`uv run python -m uvicorn agent_conductor.api.main:app --host 127.0.0.1 --port 9889 --reload`).
-   - Launch one conductor supervisor plus developer, tester, and reviewer workers in the same session.
-   - Use `uv run agent-conductor send …` commands to coordinate a simple task (enhance `test-workspace/add.js`, run the script, review the change).
-   - Capture the final outputs from each terminal with `uv run agent-conductor output <terminal-id> --mode last`.
+   - Ensure the FastAPI server is running (`uv run python -m uvicorn agent_conductor.api.main:app --host 127.0.0.1 --port 9889 --reload`).
+   - Confirm developer, tester, and reviewer workers exist (ask the operator to run `agent-conductor sessions` or use the launch summary).
+   - Use `agent-conductor send …` commands to coordinate a simple task (enhance `test-workspace/add.js`, run the script, review the change).
+   - Capture the final outputs from each terminal with `agent-conductor output <terminal-id> --mode last`.
 2. **Baseline documentation**
    - Draft `docs/approval-guide.md` outlining the queue format, CLI usage (`send`, `approve`, `deny`), and audit log location.
    - Update `docs/todo.md` accordingly once the guide exists.
@@ -16,6 +16,6 @@ You are the Agent Conductor maintainer tasked with validating inter-agent commun
 
 ### Reminders
 - Use the `CONDUCTOR_TERMINAL_ID` environment variable when coordinating terminals.
-- Use the CLI relay (`uv run agent-conductor send …`) for messaging—no inbox automation yet.
+- Use the CLI relay (`agent-conductor send …`) for messaging until inbox automation covers the scenario.
 - `docs/test-plan.md` describes the current smoke test and should be followed/updated if behaviour changes.
 - Record any issues or enhancements in `docs/todo.md` before ending the session.

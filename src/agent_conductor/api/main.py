@@ -26,6 +26,7 @@ from agent_conductor.services.approval_service import ApprovalService
 from agent_conductor.services.cleanup_service import CleanupService
 from agent_conductor.services.flow_service import FlowService
 from agent_conductor.services.inbox_service import InboxService
+from agent_conductor.services.prompt_service import PromptWatcher
 from agent_conductor.services.session_service import SessionService
 from agent_conductor.services.terminal_service import TerminalService
 from agent_conductor.utils.logging import setup_logging
@@ -74,6 +75,7 @@ async def startup_event() -> None:
     approval_service = ApprovalService(terminal_service, inbox_service)
     session_service = SessionService(terminal_service)
     cleanup_service = CleanupService(terminal_service)
+    prompt_watcher = PromptWatcher(session_service, terminal_service, inbox_service)
 
     app.state.provider_manager = provider_manager
     app.state.terminal_service = terminal_service
@@ -82,9 +84,11 @@ async def startup_event() -> None:
     app.state.approval_service = approval_service
     app.state.session_service = session_service
     app.state.cleanup_service = cleanup_service
+    app.state.prompt_watcher = prompt_watcher
     app.state.background_tasks = [
         asyncio.create_task(_cleanup_loop(cleanup_service)),
         asyncio.create_task(_inbox_loop(inbox_service)),
+        asyncio.create_task(_prompt_loop(prompt_watcher)),
     ]
 
 
@@ -99,6 +103,12 @@ async def _inbox_loop(inbox_service: InboxService) -> None:
     while True:
         inbox_service.deliver_all_pending()
         await asyncio.sleep(5)
+
+
+async def _prompt_loop(prompt_watcher: PromptWatcher) -> None:
+    while True:
+        prompt_watcher.scan()
+        await asyncio.sleep(3)
 
 
 @app.on_event("shutdown")
@@ -120,13 +130,32 @@ async def create_session(
     payload: SessionCreateRequest,
     terminals: TerminalService = Depends(get_terminal_service),
 ) -> TerminalModel:
+    created_workers: list[TerminalModel] = []
+    supervisor: TerminalModel | None = None
     try:
-        return terminals.create_terminal(
+        supervisor = terminals.create_terminal(
             provider_key=payload.provider,
             role=payload.role,
             agent_profile=payload.agent_profile,
         )
+
+        for worker_request in payload.workers:
+            created_workers.append(
+                terminals.create_terminal(
+                    provider_key=worker_request.provider,
+                    role=worker_request.role,
+                    agent_profile=worker_request.agent_profile,
+                    session_name=supervisor.session_name,
+                )
+            )
+
+        return supervisor
     except ProviderInitializationError as exc:
+        # Cleanup any partially created terminals to keep state consistent.
+        for worker_terminal in created_workers:
+            terminals.delete_terminal(worker_terminal.id)
+        if supervisor is not None:
+            terminals.delete_terminal(supervisor.id)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 

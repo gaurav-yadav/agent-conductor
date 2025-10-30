@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from agent_conductor.models.terminal import Terminal
+from agent_conductor.models.terminal import Terminal, TerminalCreateRequest
 
 
 class Session(BaseModel):
@@ -23,3 +23,4 @@ class SessionCreateRequest(BaseModel):
     provider: str
     agent_profile: Optional[str] = None
     role: str = "supervisor"
+    workers: List[TerminalCreateRequest] = Field(default_factory=list)

@@ -6,7 +6,7 @@ This manual is written for AI agents (and power users) that interact with Agent 
 
 1. **Initialize runtime state** (run once per machine):
    ```bash
-   uv run agent-conductor init
+   agent-conductor init
    ```
 2. **Start the API server** (keep running):
    ```bash
@@ -15,31 +15,36 @@ This manual is written for AI agents (and power users) that interact with Agent 
    ```
 3. **Launch the conductor (supervisor) terminal**:
    ```bash
-   uv run agent-conductor launch \
+   agent-conductor launch \
      --provider claude_code \
      --agent-profile conductor
    ```
    Capture the resulting JSON; you will need the `session_name` and conductor terminal `id`.
 4. **Attach specialists to the same session**:
    ```bash
-   uv run agent-conductor worker <session-name> --provider claude_code --agent-profile developer
-   uv run agent-conductor worker <session-name> --provider claude_code --agent-profile tester
-   uv run agent-conductor worker <session-name> --provider claude_code --agent-profile reviewer
+   agent-conductor launch --provider claude_code --agent-profile conductor \
+     --with-worker developer --with-worker tester --with-worker reviewer
+
+   # or launch workers individually
+   agent-conductor worker <session-name> --provider claude_code --agent-profile developer
+   agent-conductor worker <session-name> --provider claude_code --agent-profile tester
+   agent-conductor worker <session-name> --provider claude_code --agent-profile reviewer
    ```
 5. **Communicate via the CLI relay** (default strategy):
    ```bash
-   uv run agent-conductor send <terminal-id> --message "Instruction or status update"
+   agent-conductor send <terminal-id> --message "Instruction or status update"
    ```
    - Conductor produces ready-to-send snippets for each worker.
    - Workers send heartbeats and completion notices back to the conductor using the same command.
+   - When a worker requires a menu choice, the supervisor receives a `[PROMPT]` inbox message; reply with `agent-conductor send <worker-id> --message "<choice>"`.
 6. **Observe output or status when needed**:
    ```bash
-   uv run agent-conductor output <terminal-id> --mode last
-   uv run agent-conductor sessions
+   agent-conductor output <terminal-id> --mode last
+   agent-conductor sessions
    ```
 7. **Tear down gracefully**:
    ```bash
-   uv run agent-conductor close <terminal-id>
+   agent-conductor close <terminal-id>
    ```
    The service will log a warning (not an error) if the tmux pane has already been closed.
 
@@ -57,7 +62,7 @@ This manual is written for AI agents (and power users) that interact with Agent 
 
 ## Best Practices for Agents
 
-- **Reuse existing workers**: Ask the operator to run `uv run agent-conductor sessions` before requesting new terminals. Launch additional workers only when the required role is missing.
+- **Reuse existing workers**: Ask the operator to run `agent-conductor sessions` before requesting new terminals. Launch additional workers only when the required role is missing.
 - **Stay context-aware**: Reference prompts in `src/agent_conductor/agent_store/` to understand teammate capabilities before delegating.
 - **Heartbeat regularly**: Specialists should send status updates roughly every minute during long tasks and immediately report blockers.
 - **Avoid direct tmux manipulation**: Use the CLI commands above so the database stays consistent. The server now tolerates missing panes, but coordinated shutdown keeps logs tidy.
