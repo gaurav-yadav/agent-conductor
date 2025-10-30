@@ -169,6 +169,7 @@ The CLI entry point resides in `src/agent_conductor/cli/main.py` and wires toget
 - `shutdown` (`commands/shutdown.py`): Stops the FastAPI server process.
 - `flow` (`commands/flow.py`): Manages scheduled flows (add, list, enable, disable, remove).
 - `init` (`commands/init.py`): Bootstraps configuration directories and sample profiles.
+- `ui` (`ui/__init__.py`): Exposes a `/dashboard` route (Jinja + HTMX) for monitoring sessions, prompts, and approvals without leaving the browser.
 
 Every command assembles the correct REST request and handles user-facing errors. For example, `launch` validates the provider against `constants.PROVIDERS`, posts to `/sessions`, prints the session metadata, and attaches to tmux unless `--headless` is used.
 
@@ -186,7 +187,7 @@ The CLI avoids direct tmux manipulation. Even the attach step shells out to `tmu
 - Uses FastAPI with lifespan management to initialize logging, the SQLite schema, the cleanup worker, the flow daemon, and the inbox file watcher.
 - Defines request/response models under `src/agent_conductor/models/`.
 - Normalizes errors into HTTP responses (400 for validation issues, 404 for unknown resources, 500 for server errors).
-- Runs background coroutines for cleanup, inbox delivery, and interactive prompt forwarding (workers notify the supervisor when a choice is required).
+- Runs background coroutines for cleanup, inbox delivery, interactive prompt forwarding (workers notify the supervisor when a choice is required), and serves the HTML dashboard.
 - Lists endpoints for sessions, terminals, inbox operations, flow management, health check, and provider status inspection.
 
 The server is designed to run locally via `uv run python -m uvicorn agent_conductor.api.main:app --reload` (or through the packaging entry point) and listens on `constants.SERVER_HOST:constants.SERVER_PORT`.

@@ -2,6 +2,12 @@ from agent_conductor.clients.database import ApprovalRequest as ApprovalORM, ses
 from agent_conductor.models.enums import ApprovalStatus
 
 
+def test_dashboard_route(api_client):
+    response = api_client.get("/dashboard")
+    assert response.status_code == 200
+    assert "Agent Conductor Dashboard" in response.text
+
+
 def test_api_session_and_approval_flow(api_client, provider_manager):
     response = api_client.post(
         "/sessions",
