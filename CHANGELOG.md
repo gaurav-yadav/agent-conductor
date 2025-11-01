@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 _No changes yet._
 
+## [0.2.1] - 2025-11-01
+
+### Changed
+- Documented how to run the API server against another workspace using `uv run --project/--directory`, in both README and Agent guides.
+- Updated conductor personas (core and CredCore supervisor) to confirm provider selection before launching workers, enabling smooth swaps between Claude, Codex, and other backends.
+
 ## [0.2.0] - 2025-10-30
 
 ### Added

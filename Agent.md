@@ -12,6 +12,14 @@ This manual is written for AI agents (and power users) that interact with Agent 
    ```bash
    uv run python -m uvicorn agent_conductor.api.main:app \
      --host 127.0.0.1 --port 9889 --reload
+
+   # Or, when you need tmux panes rooted in another repository, point
+   # --project to the agent-conductor source and --directory to your workspace:
+   uv run \
+     --project /Users/you/path/to/agent-conductor \
+     --directory /Users/you/path/to/credcore-app \
+     python -m uvicorn agent_conductor.api.main:app \
+     --host 127.0.0.1 --port 9889 --reload
    ```
 3. **Launch the conductor (supervisor) terminal**:
    ```bash
