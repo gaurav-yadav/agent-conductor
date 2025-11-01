@@ -10,7 +10,7 @@ You are the Agent Conductor maintainer tasked with validating inter-agent commun
    - Capture the final outputs from each terminal with `agent-conductor output <terminal-id> --mode last`.
 2. **Baseline documentation**
    - Draft `docs/approval-guide.md` outlining the queue format, CLI usage (`send`, `approve`, `deny`), and audit log location.
-   - Update `docs/todo.md` accordingly once the guide exists.
+   - Update `docs/backlog.md` accordingly once the guide exists.
 3. **Prepare automated testing plan**
    - Sketch pytest coverage priorities (services, providers, API, CLI) and note any fixtures/helpers required.
 
@@ -18,4 +18,4 @@ You are the Agent Conductor maintainer tasked with validating inter-agent commun
 - Use the `CONDUCTOR_TERMINAL_ID` environment variable when coordinating terminals.
 - Use the CLI relay (`agent-conductor send …`) for messaging until inbox automation covers the scenario.
 - `docs/test-plan.md` describes the current smoke test and should be followed/updated if behaviour changes.
-- Record any issues or enhancements in `docs/todo.md` before ending the session.
+- Record any issues or enhancements in `docs/backlog.md` before ending the session.

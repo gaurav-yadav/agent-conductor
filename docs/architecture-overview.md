@@ -1,6 +1,6 @@
 # CLI Agent Conductor Architecture Overview
 
-This document provides a comprehensive blueprint for designing, deploying, and operating Agent Conductor—a tmux-based orchestrator for multi-agent command-line workflows. The intent is to equip another AI or human engineer with enough detail to rebuild the system from scratch without additional context. All module references align with the `src/agent_conductor` package.
+This document provides a comprehensive blueprint for designing, deploying, and operating Agent Conductor—a tmux-based orchestrator for multi-agent command-line workflows. The intent is to equip another AI or human engineer with enough detail to rebuild the system from scratch without additional context. All module references align with the `src/agent_conductor` package; see also `docs/architecture-diagrams.md` for complementary Mermaid visuals.
 
 ## Table of Contents
 - [Introduction](#introduction)
@@ -10,7 +10,7 @@ This document provides a comprehensive blueprint for designing, deploying, and o
 - [High-Level Components](#high-level-components)
 - [Multi-Agent Coordination](#multi-agent-coordination)
 - [Component Deep Dive](#component-deep-dive)
-- [Conductor CLI](#conductor-cli)
+- [agent-conductor CLI](#agent-conductor-cli)
 - [FastAPI Server](#fastapi-server)
 - [Services Layer](#services-layer)
 - [tmux Client](#tmux-client)
@@ -75,11 +75,11 @@ This document focuses on the system-level architecture rather than individual pr
 - **Assign**: MCP pattern where the supervisor delegates a task and resumes immediately while the worker reports back asynchronously.
 - **CONDUCTOR_TERMINAL_ID**: Environment variable set inside each tmux pane; every terminal window reads this value to discover its logical identifier.
 - **Cleanup Service**: Background job that deletes stale sessions, messages, and logs according to retention policy.
-- **Conductor CLI**: User-facing executable that translates commands into REST requests.
-- **Flow**: Scheduled automation defined by a cron expression, optional script, and prompt template.
-- **Flow Daemon**: Background coroutine in the API server that evaluates scheduled flows every minute.
-- **Inbox**: Lightweight message queue persisted in SQLite and delivered when a terminal becomes idle.
-- **Inbox Watcher**: File watcher that tails terminal logs to detect idle prompts and deliver queued messages.
+- **agent-conductor CLI**: User-facing executable that translates commands into REST requests.
+- **Flow**: Persisted automation definition (name, schedule, agent profile, optional script). Scheduling logic is not yet active.
+- **Flow Scheduler (planned)**: Future background coroutine that will evaluate flow schedules and trigger runs.
+- **Inbox**: Lightweight message queue persisted in SQLite. A background loop injects messages directly into tmux panes on a fixed cadence.
+- **Inbox Loop**: Background coroutine that polls for pending inbox messages and delivers them without inspecting terminal idle state.
 - **Launch**: CLI command that creates a session and supervisor terminal.
 - **MCP Server**: Embedded server that exposes higher-level orchestration verbs to agents.
 - **Provider**: Adapter implementing how to start, monitor, and communicate with a specific CLI tool or shell environment.
@@ -98,7 +98,7 @@ Conductor operates on a single host. A developer or automation runner invokes th
 
 ```mermaid
 graph LR
-    Developer((Developer or Automation)) --> CLIClient[Conductor CLI]
+    Developer((Developer or Automation)) --> CLIClient[agent-conductor CLI]
     CLIClient --> HTTPSrv[FastAPI Server]
     HTTPSrv --> ServicesLayer[Services Layer]
     ServicesLayer --> tmuxd[tmux Server]
@@ -107,8 +107,6 @@ graph LR
     ServicesLayer --> ProvidersHub[Provider Manager]
     ProvidersHub --> ExternalCLIs[CLI Tools and Shells]
     tmuxd --> LogsDir
-    LogsDir --> InboxWatcher
-    InboxWatcher --> HTTPSrv
 ```
 
 The tmux server and CLI tools run on the same machine as the API server. Connections leaving the host (for example, a provider calling an external LLM API) are the responsibility of the provider process and occur within the tmux terminal context.
@@ -117,7 +115,7 @@ The tmux server and CLI tools run on the same machine as the API server. Connect
 
 ```mermaid
 graph TD
-    U["User"] -->|conductor CLI| CLI["conductor CLI"]
+    U["User"] -->|agent-conductor CLI| CLI["agent-conductor CLI"]
     CLI -->|HTTP| API["conductor-server (FastAPI)"]
     API -->|Service calls| Services["Session & Terminal Services"]
     Services -->|libtmux| Tmux["tmux Sessions/Windows"]
@@ -127,12 +125,13 @@ graph TD
     Providers --> GenericCLI["CLI Providers<br/>(LLM CLIs, shell wrappers, etc.)"]
     GenericCLI -->|stdout/stderr| Tmux
     Tmux --> Logs
-    Logs --> Inbox["Inbox Watcher"]
+    Services --> InboxLoop["Inbox Loop"]
+    InboxLoop --> Tmux
     Providers --> MCP["MCP Server Tools"]
     MCP --> API
 ```
 
-The high-level diagram highlights the primary communication channels. The CLI issues REST calls only; all terminal interactions are proxied through the server. Providers perform process management and integrate third-party CLIs. The inbox watcher consumes log files and triggers message delivery events back into the HTTP layer.
+The high-level diagram highlights the primary communication channels. The CLI issues REST calls only; all terminal interactions are proxied through the server. Providers perform process management and integrate third-party CLIs. The inbox loop polls SQLite for pending messages and injects them into tmux panes via the terminal service.
 
 ## Multi-Agent Coordination
 
@@ -147,7 +146,7 @@ graph TB
     Worker3 --> Tool3["CLI Tool<br/>(language model CLI, shell automation, etc.)"]
 ```
 
-The supervisor maintains project context, delegates work, and aggregates results. Each worker terminal runs an independent provider instance that can execute shell commands, call APIs, or perform specialized tasks. Communication between supervisor and workers uses the inbox service, ensuring messages are delivered only when a terminal shows an idle prompt to avoid interrupting in-progress commands.
+The supervisor maintains project context, delegates work, and aggregates results. Each worker terminal runs an independent provider instance that can execute shell commands, call APIs, or perform specialized tasks. Communication between supervisor and workers can use the CLI relay or the inbox service; the current inbox loop injects messages on a timer without waiting for a provider-specific idle prompt.
 
 Typical coordination loop:
 
@@ -161,17 +160,20 @@ Typical coordination loop:
 
 The reference implementation organizes code under `src/agent_conductor`. Each subpackage encapsulates a discrete responsibility. The following sections describe the modules and the key classes or functions required to reimplement them.
 
-### Conductor CLI
+### agent-conductor CLI
 
-The CLI entry point resides in `src/agent_conductor/cli/main.py` and wires together Click commands from `commands/`. Major commands include:
-- `launch` (`commands/launch.py`): Creates a new session and supervisor terminal, optionally spawning worker personas via `--with-worker` and printing a summary for quick copy/paste.
-- `install` (`commands/install.py`): Installs agent profiles from bundled templates, local files, or remote sources.
-- `shutdown` (`commands/shutdown.py`): Stops the FastAPI server process.
-- `flow` (`commands/flow.py`): Manages scheduled flows (add, list, enable, disable, remove).
-- `init` (`commands/init.py`): Bootstraps configuration directories and sample profiles.
-- `ui` (`ui/__init__.py`): Exposes a `/dashboard` route (Jinja + HTMX) for monitoring sessions, prompts, and approvals without leaving the browser.
+The CLI entry point resides in `src/agent_conductor/cli/main.py` (a single Click module that defines all subcommands). Key commands include:
+- `init`: Bootstraps configuration directories and initializes the SQLite database.
+- `install`: Installs agent profiles from bundled templates or local files.
+- `launch`: Creates a supervisor terminal (optionally with `--with-worker` personas) and prints session metadata.
+- `worker`: Adds a worker terminal to an existing session.
+- `send`, `output`, `close`: Interact with individual terminals (send input, read output, tear down).
+- `send-message`, `inbox`: Queue and inspect inbox messages.
+- `flow`: Manage persisted flow definitions (`register`, `list`, `enable`, `disable`, `remove`).
+- `approve`, `deny`, `approvals`: Review and act on approval requests.
+- `personas`, `sessions`: Discover installed personas and active sessions.
 
-Every command assembles the correct REST request and handles user-facing errors. For example, `launch` validates the provider against `constants.PROVIDERS`, posts to `/sessions`, prints the session metadata, and attaches to tmux unless `--headless` is used.
+Each command assembles the appropriate REST call and surfaces user-facing errors. For example, `launch` posts to `/sessions`, validates the selected provider, and echoes the resulting session summary so operators can coordinate follow-up commands quickly.
 
 ```bash
 # Example: Launch a supervisor plus common specialists
@@ -184,11 +186,12 @@ The CLI avoids direct tmux manipulation. Even the attach step shells out to `tmu
 ### FastAPI Server
 
 `src/agent_conductor/api/main.py` exposes the REST surface. Key characteristics:
-- Uses FastAPI with lifespan management to initialize logging, the SQLite schema, the cleanup worker, the flow daemon, and the inbox file watcher.
+- Uses FastAPI with lifespan management to initialize logging, the SQLite schema, and singleton service instances.
+- Starts background coroutines for cleanup, inbox delivery, and interactive prompt forwarding (workers notify the supervisor when a choice is required).
 - Defines request/response models under `src/agent_conductor/models/`.
 - Normalizes errors into HTTP responses (400 for validation issues, 404 for unknown resources, 500 for server errors).
-- Runs background coroutines for cleanup, inbox delivery, interactive prompt forwarding (workers notify the supervisor when a choice is required), and serves the HTML dashboard.
-- Lists endpoints for sessions, terminals, inbox operations, flow management, health check, and provider status inspection.
+- Mounts the lightweight HTML dashboard router.
+- Lists endpoints for sessions, terminals, inbox operations, flow management, approvals, and health checks.
 
 The server is designed to run locally via `uv run python -m uvicorn agent_conductor.api.main:app --reload` (or through the packaging entry point) and listens on `constants.SERVER_HOST:constants.SERVER_PORT`.
 
@@ -197,7 +200,7 @@ The server is designed to run locally via `uv run python -m uvicorn agent_conduc
 Services hide orchestration details and enforce consistent workflows:
 - `terminal_service.py`: Generates IDs, creates tmux sessions or windows, initializes providers, wires log piping, forwards input, retrieves output, and handles cleanup.
 - `session_service.py`: Lists sessions, aggregates terminal metadata, and deletes sessions (including worker windows and provider teardown).
-- `inbox_service.py`: Watches terminal logs to detect idle prompts, stores queued messages, delivers notifications to supervisors when workers reply, and works with the prompt watcher to forward multiple-choice questions.
+- `inbox_service.py`: Stores queued messages, iterates through pending receivers on a timer, injects notifications into tmux panes, and cooperates with the prompt watcher to notify supervisors about multiple-choice questions.
 - `flow_service.py`: Parses flow files (frontmatter + markdown), runs optional scripts, renders prompt templates, and launches sessions based on schedules.
 - `cleanup_service.py`: Purges old sessions, inbox messages, and logs older than `constants.RETENTION_DAYS`.
 
@@ -216,12 +219,12 @@ Clients set `CONDUCTOR_TERMINAL_ID` in every tmux pane so terminals can locate t
 
 ### Provider Manager
 
-`src/agent_conductor/providers/manager.py` maintains a registry keyed by provider string (for example `claude_code`). Responsibilities:
+`src/agent_conductor/providers/manager.py` maintains a registry keyed by provider string (for example `claude_code`, `codex`). Responsibilities:
 - Lazily instantiate providers upon first use of a terminal.
 - Cache instances in memory so repeated API calls reuse the same process handle.
 - Provide factory hooks for custom providers by extending the registry.
 
-Providers inherit from `BaseProvider` (`providers/base.py`) which defines methods such as `initialize`, `send_input`, `get_status`, `extract_last_message_from_script`, and `cleanup`. Implementations should remain stateless aside from the underlying process handle to simplify reconstruction after restarts.
+Providers inherit from `BaseProvider` (`providers/base.py`) which defines methods such as `initialize`, `send_input`, `get_status`, `extract_last_message_from_history`, and `cleanup`. Implementations should remain stateless aside from the underlying process handle to simplify reconstruction after restarts.
 
 ### MCP Server
 
@@ -246,14 +249,14 @@ The server handles three primary lifecycles: launching a session, delegating wor
 ```mermaid
 sequenceDiagram
     participant User
-    participant CLI as conductor CLI
+    participant CLI as agent-conductor CLI
     participant API as FastAPI Server
     participant Svc as terminal_service
     participant Tmux
     participant Provider
     participant CLIProc as Provider CLI
 
-    User->>CLI: conductor launch --agents code_supervisor
+    User->>CLI: agent-conductor launch --provider claude_code --agent-profile conductor
     CLI->>API: POST /sessions (provider, agent_profile)
     API->>Svc: create_terminal(new_session=True)
     Svc->>Tmux: create session + window (set CONDUCTOR_TERMINAL_ID)
@@ -270,7 +273,7 @@ Step-by-step summary:
 1. CLI validates arguments and posts to `/sessions`.
 2. `terminal_service.create_terminal` generates identifiers, creates the tmux session, and stores metadata.
 3. Provider manager initializes the provider, which spawns the actual CLI process (for example `q` or `claude`).
-4. tmux piping directs output to a log file; the inbox watcher begins monitoring the file.
+4. tmux piping directs output to a log file. Background tasks (cleanup, inbox delivery, prompt watcher) start alongside the session to keep terminals in sync.
 5. The CLI prints session metadata and attaches unless `--headless` was specified.
 
 ### Handoff Flow
@@ -311,30 +314,27 @@ sequenceDiagram
     MCP->>API: POST /terminals/{worker}/input
     MCP-->>Sup: return terminal_id immediately
     Worker->>Inbox: send_message(receiver_id=sup, message)
-    Inbox->>API: deliver when supervisor window idle
+    Inbox->>API: deliver on background poll
     API-->>Sup: inbox message arrives
 ```
 
-Assign returns immediately, allowing the supervisor to continue other work. The worker is expected to send a callback message containing the supervisor's terminal ID, which is how the inbox service knows where to deliver the result. The inbox watcher waits for the supervisor's log to show an idle prompt before injecting the message to avoid interleaving with running commands.
+Assign returns immediately, allowing the supervisor to continue other work. The worker is expected to send a callback message containing the supervisor's terminal ID, which is how the inbox service knows where to deliver the result. The inbox loop currently delivers messages as soon as it wakes up, so personas should avoid emitting replies while the supervisor is streaming long-form output.
 
 ## Terminal Lifecycle State Machine
 
 ```mermaid
 stateDiagram-v2
-    [*] --> INITIALIZING
-    INITIALIZING --> READY: Provider initialized
+    [*] --> READY: Terminal created
     READY --> RUNNING: Input sent
-    RUNNING --> READY: Prompt detected
-    RUNNING --> COMPLETED: Provider signaled finish
-    READY --> COMPLETED: Supervisor exit command
-    COMPLETED --> CLEANUP: API requested termination
-    CLEANUP --> [*]: tmux window closed, metadata removed
-    RUNNING --> ERROR: Provider crash
-    INITIALIZING --> ERROR: tmux failure
-    ERROR --> CLEANUP: Cleanup service or explicit delete
+    RUNNING --> READY: Provider idle prompt detected
+    RUNNING --> COMPLETED: Provider exited normally
+    READY --> COMPLETED: Supervisor requested exit
+    RUNNING --> ERROR: Provider crash / tmux failure
+    COMPLETED --> [*]
+    ERROR --> [*]
 ```
 
-`terminal_service` drives transitions by invoking provider methods and updating the database. Providers must surface status via `get_status()` so the API can expose terminal state to clients. The cleanup service ensures `ERROR` or orphaned terminals eventually transition to `CLEANUP`.
+`terminal_service` drives transitions by invoking provider methods and updating the database. Providers must surface status via `get_status()` so the API can expose terminal state to clients. Cleanup removes metadata for completed/error terminals and prunes orphaned tmux windows.
 
 ## Data Model Reference
 
@@ -343,20 +343,32 @@ SQLite persists lightweight metadata in three tables. The following SQL sketch c
 ```sql
 CREATE TABLE terminals (
     id TEXT PRIMARY KEY,
-    tmux_session TEXT NOT NULL,
-    tmux_window TEXT NOT NULL,
+    session_name TEXT NOT NULL,
+    window_name TEXT NOT NULL,
     provider TEXT NOT NULL,
     agent_profile TEXT,
-    last_active DATETIME DEFAULT CURRENT_TIMESTAMP
+    status TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE inbox (
+CREATE TABLE inbox_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receiver_id TEXT NOT NULL REFERENCES terminals(id),
     sender_id TEXT NOT NULL,
-    receiver_id TEXT NOT NULL,
     message TEXT NOT NULL,
     status TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE approval_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    terminal_id TEXT NOT NULL REFERENCES terminals(id),
+    supervisor_id TEXT NOT NULL,
+    command_text TEXT NOT NULL,
+    metadata TEXT,
+    status TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    decided_at DATETIME
 );
 
 CREATE TABLE flows (
@@ -372,18 +384,18 @@ CREATE TABLE flows (
 ```
 
 Important data relationships:
-- `terminals.tmux_session` forms a one-to-many relationship with workers in the same session.
-- `inbox.receiver_id` corresponds to `terminals.id` (`CONDUCTOR_TERMINAL_ID`), enabling targeted delivery.
-- `flows` store metadata referencing markdown files on disk; the flow daemon refreshes `next_run` after each execution.
+- `terminals.session_name` groups the supervisor and its workers within the same tmux session.
+- `inbox_messages.receiver_id` corresponds to `terminals.id` (`CONDUCTOR_TERMINAL_ID`), enabling targeted delivery.
+- `approval_requests` link queued approvals to both the requesting worker and its supervisor.
+- `flows` store metadata referencing markdown files on disk; scheduling logic remains a future enhancement.
 
 ## Configuration and Environment
 
 Configuration resides primarily in `src/agent_conductor/constants.py`. Key values:
 - `SESSION_PREFIX = "conductor-"`.
 - `HOME_DIR = Path.home() / ".conductor"`.
-- `TERMINAL_LOG_DIR`, `DB_DIR`, and `LOCAL_AGENT_STORE_DIR` derived from the home directory.
-- `PROVIDERS = ['claude_code']` enumeration used for validation.
-- Server defaults `SERVER_HOST = "localhost"`, `SERVER_PORT = 9889`.
+- `LOG_DIR`, `TERMINAL_LOG_DIR`, `DB_DIR`, and related paths derived from the home directory.
+- Server defaults `SERVER_HOST = "127.0.0.1"`, `SERVER_PORT = 9889`.
 
 Environment variables:
 - `CONDUCTOR_TERMINAL_ID`: Injected into each tmux pane, used by providers and the MCP server.
@@ -404,17 +416,24 @@ Updating `constants.py` and the setup scripts is required to fully adopt the new
 
 ## CLI Command Reference
 
-- `conductor launch`: POST `/sessions`, attach to tmux unless `--headless`.
-- `conductor launch --session-name demo --provider claude_code`: Creates session with explicit name and provider.
-- `agent-conductor install path/to/profile.md`: Copies an agent profile into the context directory.
-- `agent-conductor install developer`: Installs bundled profiles from `agent_store/`.
-- `conductor flow add flows/daily.md`: Registers a flow file and schedules it.
-- `conductor flow list`: Displays stored flows along with next run time.
-- `conductor flow enable <name>` / `disable <name>`: Toggles flow execution.
-- `conductor shutdown`: Stops the server process (currently implemented as a tmux command execution wrapper).
-- `conductor init`: Creates directories, sample profiles, and informs the user about required provider setup.
+| Command | Purpose |
+| --- | --- |
+| `agent-conductor init` | Create runtime directories and initialize the SQLite database. |
+| `agent-conductor install <source>` | Install bundled or local agent profiles. |
+| `agent-conductor launch --provider <key> --agent-profile <profile> [--with-worker ...]` | Start a supervisor terminal (optionally bootstrapping workers). |
+| `agent-conductor worker <session> --provider <key> --agent-profile <profile>` | Add a worker terminal to an existing session. |
+| `agent-conductor sessions` | List active sessions and their terminals. |
+| `agent-conductor send <terminal-id> --message "..."` | Inject input into a terminal (with optional approval gating). |
+| `agent-conductor output <terminal-id> [--mode last]` | Retrieve tmux output. |
+| `agent-conductor close <terminal-id>` | Terminate a terminal and clean up resources. |
+| `agent-conductor send-message --sender <id> --receiver <id> --message "..."` | Queue an inbox message manually. |
+| `agent-conductor inbox <terminal-id>` | Inspect messages queued for a terminal. |
+| `agent-conductor flow register/list/enable/disable/remove` | Manage persisted flow definitions. |
+| `agent-conductor approvals` | List pending approvals. |
+| `agent-conductor approve <approval-id>` / `deny <approval-id>` | Resolve approval requests. |
+| `agent-conductor personas` | List bundled and installed personas. |
 
-Each command surfaces friendly Click errors for misconfiguration and prints actionable follow-up steps (for example, the session name to attach manually).
+Each command surfaces Click errors for misconfiguration and prints actionable follow-up steps (for example, the session summary after `launch`).
 
 ## REST API Reference
 
@@ -422,35 +441,38 @@ The API exposes a concise surface intended for programmatic orchestration or alt
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/health` | Heartbeat including service name. |
-| POST | `/sessions` | Create a new session with an initial terminal. |
-| GET | `/sessions` | List active sessions and basic metadata. |
-| GET | `/sessions/{session_name}` | Retrieve terminals and provider info for a session. |
-| DELETE | `/sessions/{session_name}` | Terminate all terminals in the session. |
+| GET | `/health` | Lightweight heartbeat. |
+| POST | `/sessions` | Create a new session with a supervisor terminal. |
+| GET | `/sessions` | List active sessions. |
+| GET | `/sessions/{session_name}` | Retrieve terminals within a session. |
+| DELETE | `/sessions/{session_name}` | Terminate every terminal in the session. |
 | POST | `/sessions/{session_name}/terminals` | Spawn a worker terminal in an existing session. |
-| GET | `/sessions/{session_name}/terminals` | List terminal metadata for the session. |
-| GET | `/terminals/{terminal_id}` | Retrieve provider status and metadata. |
-| POST | `/terminals/{terminal_id}/input` | Send keystrokes to a terminal. |
-| GET | `/terminals/{terminal_id}/output` | Fetch tmux history (mode `full` or `last`). |
-| POST | `/terminals/{terminal_id}/exit` | Gracefully shut down a terminal. |
-| POST | `/inbox` | Queue a message for delivery (used by MCP server). |
-| GET | `/inbox/{terminal_id}` | Retrieve queued messages. |
-| POST | `/flows` | Register a flow from a file path. |
+| GET | `/terminals/{terminal_id}` | Fetch metadata and current status. |
+| POST | `/terminals/{terminal_id}/input` | Send keystrokes to a terminal (with optional approvals). |
+| GET | `/terminals/{terminal_id}/output` | Fetch tmux history (`mode=full` or `mode=last`). |
+| DELETE | `/terminals/{terminal_id}` | Remove a terminal and clean up resources. |
+| POST | `/inbox` | Queue a message for delivery (used by MCP + CLI). |
+| GET | `/inbox/{terminal_id}` | List messages queued for a terminal. |
+| POST | `/inbox/{terminal_id}/deliver` | Force delivery attempt for one receiver. |
+| POST | `/flows` | Register or update a flow definition. |
 | GET | `/flows` | List registered flows. |
-| GET | `/flows/{name}` | Show flow details. |
-| POST | `/flows/{name}/enable` | Enable a flow. |
-| POST | `/flows/{name}/disable` | Disable a flow. |
+| GET | `/flows/{name}` | Retrieve flow metadata. |
+| POST | `/flows/{name}/enable` | Mark a flow as enabled. |
+| POST | `/flows/{name}/disable` | Mark a flow as disabled. |
 | DELETE | `/flows/{name}` | Remove a flow definition. |
+| POST | `/approvals` | Queue a new approval request. |
+| GET | `/approvals` | List pending and decided approvals. |
+| POST | `/approvals/{id}/approve` | Approve and dispatch a queued command. |
+| POST | `/approvals/{id}/deny` | Deny a queued command (optional metadata). |
 
 All endpoints return JSON. Authentication is currently omitted because the server is intended for local usage.
 
 ## Background Workers and Schedulers
 
-Four autonomous routines ensure Conductor remains responsive:
-- **Cleanup Worker** (`cleanup_service.py`): Runs in a background thread, scans for sessions older than the retention window, deletes database rows, removes log files, and closes stray tmux sessions.
-- **Flow Daemon** (`flow_daemon` in `api/main.py`): Executes every 60 seconds, evaluating `db_get_flows_to_run()` and invoking `flow_service.execute_flow`.
-- **Inbox Delivery Loop** (`inbox_service.deliver_all_pending`): Polls for queued inbox messages and injects them into the target terminal once it is idle.
-- **Prompt Watcher** (`prompt_service.PromptWatcher`): Inspects worker providers for multiple-choice prompts and forwards them to the supervisor inbox with response instructions.
+Three background tasks keep Conductor responsive:
+- **Cleanup Loop** (`cleanup_service.CleanupService`): Periodically removes completed/error terminals, prunes orphaned log files, and shuts down tmux sessions with no remaining windows.
+- **Inbox Delivery Loop** (`inbox_service.deliver_all_pending`): Every few seconds, finds receivers with pending messages and injects them into tmux panes. Delivery happens immediately; there is no idle-prompt detection yet.
+- **Prompt Watcher** (`prompt_service.PromptWatcher`): Polls providers for interactive choice prompts and forwards them to the supervisor via the inbox.
 
 Each worker logs progress via Python's logging module, enabling operators to verify activity in the server console or log files.
 
@@ -494,20 +516,18 @@ While optimized for local workflows, Conductor can scale modestly:
 - tmux handles dozens of sessions reliably; beyond that, consider sharding across hosts.
 - SQLite supports concurrent reads and serialized writes; heavy workloads might require migrating to PostgreSQL with minimal code changes via SQLAlchemy.
 - Provider startup time often dominates; caching provider environments or using lightweight shells can improve responsiveness.
-- Flow daemon cadence (60 seconds) can be tuned to reduce idle polling.
+- Inbox polling cadence (default 5 seconds) can be tuned to reduce chatter or improve responsiveness.
 
 Future scaling enhancements could include remote tmux over SSH, containerized providers, or job queue integration.
 
 ## Provider Development Guide
 
 To add a provider:
-1. Create a subclass of `BaseProvider` in `src/agent_conductor/providers/`.
-2. Implement required methods: `initialize`, `send_input`, `get_status`, `extract_last_message_from_script`, `cleanup`.
-3. Register the provider in `providers/manager.py` by extending the registry dictionary.
-4. Update `constants.PROVIDERS` to include the new provider key.
-5. Provide installation instructions or automation under `agent_store` or the CLI `install` command.
-6. Document idle prompt patterns so the inbox watcher can detect readiness (often implemented in the provider or configuration).
-7. Write tests to simulate provider lifecycle (ex: mock tmux interactions).
+1. Subclass `BaseProvider` in `src/agent_conductor/providers/`.
+2. Implement the core lifecycle methods: `initialize`, `send_input`, `get_status`, `extract_last_message_from_history`, and `cleanup`. Use `ensure_binary_exists` or custom guards to validate prerequisites.
+3. Register the provider in `providers/manager.py` by extending `_registry` with a new key.
+4. Document installation steps (CLI binaries, environment variables) and ship sample personas or instructions under `agent_store/` if appropriate.
+5. Write tests that mock tmux interactions to cover initialization, status transitions, and cleanup.
 
 Providers can embed custom logic such as waiting for a login prompt, injecting configuration files, or customizing environment variables. Keep provider-specific secrets outside the repository and rely on environment injection when launching terminals.
 
@@ -528,64 +548,26 @@ Inbox messages progress through statuses defined in `models/inbox.py`:
 - `FAILED`: Delivery attempted but the terminal was unavailable or busy beyond a timeout.
 
 Workflow:
-1. Sender calls `POST /inbox` or the MCP `send_message` tool.
-2. Inbox watcher polls the receiver's terminal log, looking for idle prompt regex patterns.
-3. When idle, watcher uses tmux `send_keys` to insert the message (usually formatted as a bracketed notification).
-4. Message status updates to `DELIVERED` in SQLite.
+1. Sender calls `POST /inbox` (CLI) or the MCP `send_message` tool.
+2. On the next poll interval, `InboxService.deliver_all_pending` fetches receivers with pending messages.
+3. The service calls `TerminalService.send_input` to inject the message into the tmux pane and updates the status to `DELIVERED`, or `FAILED` if tmux raises an error.
 
-To avoid missed notifications, ensure provider prompts consistently emit recognizable idle markers.
+Because delivery does not yet wait for idle prompts, agents should avoid queueing messages while a terminal is streaming long output. Adding provider-aware idle detection is a planned enhancement.
 
 ## Human-in-the-Loop Command Approval
 
-_Status: Planned enhancement. The workflow below describes the intended design; no approval queue or CLI helpers ship in this repository yet._
+Conductor includes a lightweight approval queue for commands that require confirmation:
 
-Some deployments require a supervisor (human or meta-agent) to approve every potentially destructive action a worker suggests. Conductor supports this pattern without exposing worker terminals directly in the UI by layering a lightweight approval queue on top of the inbox and tmux primitives:
+1. A worker (or operator) calls `agent-conductor send <terminal-id> --message "..." --require-approval --supervisor <id>`.
+2. `ApprovalService.request_approval` persists the request, writes an audit entry under `~/.conductor/approvals/audit.log`, and notifies the supervisor via the inbox.
+3. Supervisors run `agent-conductor approvals` to review pending items and use `agent-conductor approve <id>` or `agent-conductor deny <id> [--reason ...]` to resolve them.
+4. On approval, the original command is injected into the worker terminal; on denial, an optional inbox message is sent back to the worker summarizing the reason.
 
-1. **Interception Hook**: Instead of letting a provider immediately call `tmux send-keys`, wrap the call in a small middleware function—either inside the provider implementation or as a shared helper. The middleware records the proposed command (`"write file X"`, `"run pytest"`), the worker terminal ID, and any metadata (risk level, suggested diff).
-2. **Approval Queue**: Persist the request in SQLite (new table) or an in-memory queue, then notify the manager terminal by dropping a message into its inbox. Because inbox delivery is already log-aware, the manager receives a structured prompt such as:  
-   `Worker def456 wants to run: pip install foobar --upgrade. Approve? (approve def456 / deny def456)`
-3. **Manager Interaction**: The manager agent or human responds from the main terminal. A simple CLI helper (`conductor approve <terminal_id>`) can pop the queue entry, send the captured command to the worker via the usual REST path (`POST /terminals/{id}/input`), and log the decision. A denial triggers an inbox message to the worker indicating the refusal.
-4. **Awareness Without Switching Windows**: tmux can surface notifications using `display-message` or a short-lived popup (`display-popup`) if you want extra visibility, but you are not required to foreground the worker window. The manager window remains the only pane the human watches.
-5. **Auditability**: Store approvals/denials alongside timestamps and terminal IDs so you can reconstruct who authorized what. This pairs naturally with the terminal log files for full traceability.
-
-This workflow works equally well for any provider (Claude Code, Codex, shell-based agents) because the approval logic runs outside the provider process and only invokes the REST API once a decision is made.
-
-### Basic Main-Terminal Loop
-
-To experiment quickly without building a full service layer, you can wire a minimal loop that keeps everything inside the manager (supervisor) terminal:
-
-1. **Interception shim** (worker side): wrap the provider’s `send_input` so that any command matching your risk heuristics gets appended to a JSON queue—for example `~/.conductor/approvals/pending.json`—instead of going straight to `tmux send-keys`. Include `terminal_id`, `command_text`, and an auto-incremented `request_id`. The shim should create the approvals directory and initialise the JSON file with `[]` if it does not exist so first-run experiences stay smooth.
-2. **Supervisor helper**: add a lightweight CLI or script that reads the queue, prints pending requests, and, when approved, posts the captured command back through the REST API. Reuse the same guard logic (create the queue file on demand) and append every approval or denial to a simple audit log—CSV or newline-delimited JSON stored alongside the queue—to make test sessions easy to review.
-3. **Usage from the supervisor terminal**: run the helper from the main terminal to list, approve, or deny requests. On denial, remove the queue entry and optionally send an explanatory inbox message to the worker. Because everything flows through files and the existing REST API, the prototype keeps changes minimal while letting you validate that the manager terminal can pause and resume any worker’s command stream. Once satisfied, the JSON queue can be replaced with a proper database table and the helper script with real CLI commands.
-
-### Proof-of-Concept Checklist
-
-Start with a narrow slice so you can validate the approval mechanics quickly:
-
-1. **Wrap a Single Provider**: Modify one provider (for example, Codex) so any outbound command first calls an approval middleware instead of `tmux send-keys`.
-2. **Queue Storage**: Create a lightweight `pending_actions` store (SQLite table or in-memory queue) capturing `terminal_id`, `command_text`, `timestamp`, and optional risk metadata.
-3. **Manager Prompt**: Upon enqueue, push a notification to the manager terminal via the inbox and optionally fire `tmux display-message "Approval needed for <terminal_id>"`.
-4. **Approval CLI**: Implement `conductor approve <terminal_id>` and `conductor deny <terminal_id>` helpers that pop the queue entry, invoke `/terminals/{id}/input` (for approve) or send an explanatory inbox message (for deny).
-5. **Audit Log**: Record every decision in a simple log or database table to verify traceability.
-
-### Polishing the Experience
-
-Once the POC loop works end-to-end, expand gradually:
-
-1. **Provider-Agnostic Middleware**: Move the interception helper into a shared module so Claude Code, Codex, and future providers all reuse the same approval path.
-2. **Manager Dashboard**: Build a richer UX—either a dedicated tmux window or browser page—that lists pending approvals, includes context (diffs, generated code), and supports batch decisions.
-3. **Policy Engine**: Add metadata-driven rules (auto-approve safe read-only commands, require multi-party approval for high-risk writes) and route tasks to long-lived QA/reviewer agents when needed.
-4. **Notifications & Alerts**: Integrate with external channels (Slack, email) for stuck approvals, and surface summaries in the session logs for auditing.
+The audit log records every request, approval, and denial for traceability. Providers do not need to change their implementation—approval handling sits entirely in the API/CLI layer.
 
 ## Flow Scheduling System
 
-Flows combine metadata, optional scripts, and prompt templates:
-- Flow files use Markdown with YAML frontmatter (`name`, `schedule`, `agent_profile`, optional `script`).
-- When executed, optional scripts produce JSON with keys `execute` (bool) and `output` (object). The JSON is merged into the prompt template via `utils.template.render_template`.
-- If `execute` is false, the flow is skipped but `next_run` is still updated.
-- Flows launch new sessions using the `generate_session_name` helper and pass the rendered prompt to the supervisor terminal.
-
-The scheduler uses APScheduler's `CronTrigger` to compute `next_run`, enabling familiar cron expressions. Logs indicate success, skip, or failure reasons.
+Flows combine metadata, optional scripts, and prompt templates. The current implementation persists flow definitions and exposes CLI/REST endpoints for management, but it does **not** execute schedules yet. Implementing a scheduler (for example with APScheduler) remains on the backlog.
 
 ## Deployment Topologies
 
@@ -600,7 +582,7 @@ Ensure tmux is installed and accessible. For production-like environments, super
 
 - **Start the server**: `uv run python -m uvicorn agent_conductor.api.main:app --host 127.0.0.1 --port 9889`.
 - **Validate health**: `curl http://127.0.0.1:9889/health`.
-- **Launch agents**: `conductor launch --agents code_supervisor`.
+- **Launch agents**: `agent-conductor launch --provider claude_code --agent-profile conductor` (add `--with-worker ...` as needed).
 - **List sessions**: `curl http://127.0.0.1:9889/sessions`.
 - **Terminate session**: `curl -X DELETE http://127.0.0.1:9889/sessions/<session_name>`.
 - **Collect logs**: Inspect `~/.conductor/logs/terminal/<terminal_id>.log`.
@@ -613,7 +595,7 @@ Ensure tmux is installed and accessible. For production-like environments, super
 Current automated coverage is minimal; to harden the project:
 - Add unit tests for services using `pytest` and mocks for tmux/database interactions.
 - Create integration tests that spin up the server in-process, perform REST calls, and assert side effects.
-- Write provider-specific smoke tests verifying initialization and idle prompt detection.
+- Write provider-specific smoke tests covering initialization, status transitions, and cleanup.
 - Validate flow execution by using temporary directories and sample markdown flows.
 - Include linting (`ruff`, `black`) and type checking (`mypy`) in CI to maintain code quality.
 
@@ -625,7 +607,7 @@ Common issues:
 - **CLI cannot connect to server**: Ensure FastAPI server is running and accessible at the configured host/port.
 - **tmux session already exists**: Occurs when reusing a session name; delete the existing session or choose a new name.
 - **Provider initialization fails**: Check provider logs in the terminal log file for API key errors or missing binaries.
-- **Inbox messages never arrive**: Confirm idle prompt regex configuration and that the supervisor terminal is not constantly streaming output.
+- **Inbox messages never arrive**: Ensure the inbox background task is running (check server logs) and that the receiver terminal ID is correct; review terminal logs for injected `[INBOX:...]` lines.
 - **Flows do not trigger**: Verify the cron expression, ensure the script returns valid JSON, and inspect server logs for scheduling errors.
 - **Environment variable missing**: If `CONDUCTOR_TERMINAL_ID` is absent, the agent is running outside Conductor; relaunch via the orchestrator.
 
@@ -644,7 +626,7 @@ Systematic debugging approach:
 - Introduce a web dashboard for monitoring sessions and flows.
 - Enable configurable idle prompt detection per provider via YAML settings.
 - Provide a plugin system for custom inbox delivery channels (Slack, email).
-- Expand built-in providers beyond `claude_code`.
+- Expand built-in providers beyond the bundled `claude_code` and `codex` integrations.
 - Add persistence for session transcripts in a search index (Elastic, OpenSearch).
 
 ## Appendix A: Provider Interface Contract
@@ -731,20 +713,19 @@ For hacking on docs like this one, install Markdown preview tooling or rely on t
 
 - [ ] Install tmux 3.x or newer.
 - [ ] Ensure the Python runtime matches the version expected by `pyproject.toml`.
-- [ ] Create the Conductor home directories (`conductor init`).
+- [ ] Create the Conductor home directories (`agent-conductor init`).
 - [ ] Configure provider API keys and CLI binaries.
 - [ ] Start the FastAPI server with the desired host and port.
-- [ ] Verify `conductor launch --agents code_supervisor` succeeds.
-- [ ] Confirm terminal logs are being written and inbox watcher detects prompts.
-- [ ] Schedule a sample flow and observe execution.
+- [ ] Verify `agent-conductor launch --provider claude_code --agent-profile conductor` succeeds.
+- [ ] Confirm terminal logs are being written and the inbox delivery loop is running (check server logs).
+- [ ] Register a sample flow definition (scheduler execution is still pending backlog work).
 - [ ] Document operational contacts and on-call rotation for the deployment.
 
 ## Appendix F: Reference Implementation Map
 
 | Area | Source Path | Notes |
 | --- | --- | --- |
-| CLI entry point | `src/agent_conductor/cli/main.py` | Registers Click commands. |
-| CLI commands | `src/agent_conductor/cli/commands/` | launch, worker, send, sessions, etc. |
+| CLI module | `src/agent_conductor/cli/main.py` | Registers Click subcommands. |
 | FastAPI app | `src/agent_conductor/api/main.py` | REST routes and background tasks. |
 | Services | `src/agent_conductor/services/` | Business logic per domain. |
 | Providers | `src/agent_conductor/providers/` | Base and concrete provider implementations. |
@@ -753,13 +734,12 @@ For hacking on docs like this one, install Markdown preview tooling or rely on t
 | tmux client | `src/agent_conductor/clients/tmux.py` | tmux orchestration wrapper. |
 | Utilities | `src/agent_conductor/utils/` | ID generation, templates, logging. |
 | Agent store | `src/agent_conductor/agent_store/` | Bundled agent profiles. |
-| Examples | `examples/` | Assign pattern walkthrough and sample flows. |
+| Sample workspace | `test-workspace/` | Scripts used by smoke tests and demonstrations. |
 
 ## Appendix G: Glossary of Logs
 
 - `server.log` (optional): If configured, captures FastAPI and background worker output.
-- `~/.conductor/logs/terminal/<id>.log`: Raw stdout/stderr for each terminal; used by inbox watcher.
-- `flow_daemon` entries: Indicate scheduled flow evaluations and actions.
+- `~/.conductor/logs/terminal/<id>.log`: Raw stdout/stderr for each terminal; primary source for debugging and audit trails.
 - `cleanup` entries: Document deletion of stale resources.
 - `provider` logs: Providers may write structured messages to stdout, visible in terminal logs.
 

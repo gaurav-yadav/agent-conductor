@@ -25,21 +25,24 @@ Each terminal runs the `agent-conductor` CLI via `uv`. Messages are routed by ca
 - Humans or scripts must orchestrate the CLI calls; messages can interleave if a terminal is mid-response.
 - Interactive prompts (e.g., Claude Code requesting numbered choices) are forwarded to the supervisor inbox as `[PROMPT]` messages; you still need to send the final response via `agent-conductor send <worker-id> --message "<choice>"`.
 
+## 2. Inbox Queue (background delivery)
+
+The inbox service lets agents persist messages to SQLite and have a background loop inject them into the destination terminal. This removes the need to run CLI commands for every reply, but it currently delivers immediately without inspecting terminal state.
+
 **How it works**
-- Messages are stored in SQLite via `/terminals/{id}/inbox/messages`.
-- A background watcher monitors each terminal’s log (via `tmux pipe-pane >= logfile`).
-- As soon as the target terminal shows its idle prompt, the watcher injects the message.
-- Senders don’t need terminal IDs; they just post to the inbox.
+- Clients call `POST /inbox` (or the MCP helper) to store a message with status `PENDING`.
+- Every five seconds the server’s background loop (`InboxService.deliver_all_pending`) fetches receivers with pending messages and calls `TerminalService.send_input` to push each payload into the tmux window.
+- Once `send_input` succeeds the message is marked `DELIVERED`; failures are recorded as `FAILED` for operator review.
 
 **Benefits over CLI relay**
-- Automatic queuing: multiple workers can send updates without colliding.
-- No foreground shell commands; workers stay focused in their own panes.
-- Built-in delivery guarantees and retry logging.
+- Automatic queuing: senders do not need to know terminal IDs or timing details.
+- No foreground shell commands; workers stay in their prompt and rely on the background loop.
+- Delivery attempts are persisted, so operators can audit failures.
 
 **Migration plan**
-1. Implement `create_inbox_message_endpoint` and the inbox database helpers (models, services, watcher).
-2. Wire the watcher into Agent Conductor’s FastAPI startup so it runs alongside the approval and cleanup loops.
-3. Update personas to use the inbox terminology (“send a message via the conductor inbox”) instead of the CLI command.
+1. Adopt inbox sends in personas (e.g., use the MCP `send_message` helper) so workers place replies in the queue.
+2. Monitor how often deliveries collide with active provider output. The current implementation does not pause until a shell is idle; agents should avoid sending messages while they are streaming long responses.
+3. Future improvement: introduce an idle detector or per-provider integration so queued messages wait for a safe insertion point.
 
 ## Choosing a Strategy
 
@@ -54,9 +57,9 @@ Each terminal runs the `agent-conductor` CLI via `uv`. Messages are routed by ca
 Supervisors (Conductor persona) currently rely on the operator to launch specialist terminals. When the conductor requests a role, run:
 
 ```bash
-agent-conductor worker <session-name> --provider claude_code --agent-profile developer
-agent-conductor worker <session-name> --provider claude_code --agent-profile tester
-agent-conductor worker <session-name> --provider claude_code --agent-profile reviewer
+agent-conductor worker <session-name> --provider <provider-key> --agent-profile developer
+agent-conductor worker <session-name> --provider <provider-key> --agent-profile tester
+agent-conductor worker <session-name> --provider <provider-key> --agent-profile reviewer
 ```
 
 Once a worker exists, the conductor references it by window name (`worker-developer`, etc.) and continues coordination through the chosen communication strategy. Future enhancements may expose worker launch as a callable tool so the conductor can request it programmatically.

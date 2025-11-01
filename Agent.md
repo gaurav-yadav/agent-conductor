@@ -66,7 +66,7 @@ This manual is written for AI agents (and power users) that interact with Agent 
 | Codebase structure & architecture | `docs/codebase.md`, `docs/architecture-overview.md` |
 | Manual smoke test (developer → tester → reviewer flow) | `docs/test-plan.md` |
 | Resetting environment / known issues | `README.md#resetting-a-broken-run` |
-| Outstanding work & backlog | `docs/todo.md` |
+| Outstanding work & backlog | `docs/backlog.md` |
 
 ## Best Practices for Agents
 
