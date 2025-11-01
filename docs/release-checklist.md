@@ -5,7 +5,7 @@ This guide captures the steps used to produce a tagged release (e.g. `v0.1.0-rc1
 ## Pre-flight
 - [ ] Ensure `git status` is clean and CI checks pass (`uv run python -m pytest`, `uv run ruff check .`, `uv run mypy`).
 - [ ] Update version in `pyproject.toml` and append a new section to `CHANGELOG.md`.
-- [ ] Confirm `docs/todo.md` reflects the milestone state.
+- [ ] Confirm `docs/backlog.md` reflects the milestone state.
 
 ## Build artifacts
 ```bash
@@ -35,5 +35,5 @@ uv tool install --force-reinstall --upgrade \
 - [ ] Optional: upload wheel and sdist to PyPI using `uv publish` (or `twine`).
 
 ## Post-release
-- [ ] Update `docs/todo.md` to reflect release completion.
+- [ ] Update `docs/backlog.md` to reflect release completion.
 - [ ] Communicate availability to users with installation instructions (`uv tool install git+https://github.com/gaurav-yadav/agent-conductor@v<version>`).

@@ -9,6 +9,7 @@ from agent_conductor.clients.tmux import TmuxClient
 from agent_conductor.models.enums import TerminalStatus
 from agent_conductor.providers.base import BaseProvider, ProviderInitializationError
 from agent_conductor.providers.claude_code import ClaudeCodeProvider
+from agent_conductor.providers.codex import CodexProvider
 from agent_conductor.providers.q_cli import QCLIProvider
 
 LOG = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ class ProviderManager:
     _registry: Dict[str, Type[BaseProvider]] = {
         "q_cli": QCLIProvider,
         "claude_code": ClaudeCodeProvider,
+        "codex": CodexProvider,
     }
 
     def __init__(self, tmux: Optional[TmuxClient] = None) -> None:

@@ -222,10 +222,14 @@ Before calling `assign`, capture your terminal ID with `echo $CONDUCTOR_TERMINAL
 
 When the rename lands, update references accordingly.
 
+### Provider-specific variables
+
+- **Codex**: set `model` to choose the Codex model, `variables.codex_args` for extra CLI flags, and `variables.codex_env` for additional `KEY=VALUE` pairs appended to the launch environment. Defaults keep Codex in `~/.conductor/providers/codex/<terminal-id>` with recorder disabled.
+
 ## Testing Profiles Locally
 
 1. Place the profile in `~/.conductor/agent-context/` (or use `agent-conductor install ./path/to/profile.md`).
-2. Launch a test session: `conductor launch --agents <profile-name> --headless`.
+2. Launch a test session: `agent-conductor launch --provider claude_code --agent-profile <profile-name> --headless` (swap provider as needed).
 3. Observe the terminal log under `~/.conductor/logs/terminal/<terminal_id>.log`.
 4. Verify MCP tools are available by running `help tools` (provider-specific) or invoking a simple `send_message`.
 5. Iterate on the Markdown prompt, relaunching or using flows to test automation scenarios.

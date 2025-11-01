@@ -2,7 +2,7 @@
 
 Agent Conductor is a CLI-first orchestrator for coordinating multiple terminal-based AI agents inside tmux sessions. The project prioritizes a clear separation of concerns, simple primitives, and SOLID-aligned service boundaries.
 
-Refer to `Agent.md` for agent-facing instructions, `docs/architecture-overview.md` for a detailed system blueprint, and `docs/todo.md` for the implementation roadmap.
+Refer to `Agent.md` for agent-facing instructions, `docs/architecture-overview.md` for a detailed system blueprint, `docs/architecture-diagrams.md` for visual diagrams, and `docs/backlog.md` for the current roadmap.
 
 ## Requirements
 
@@ -84,6 +84,8 @@ agent-conductor worker <session-name> --provider claude_code --agent-profile dev
 agent-conductor worker <session-name> --provider claude_code --agent-profile tester
 agent-conductor worker <session-name> --provider claude_code --agent-profile reviewer
 ```
+
+> Tip: swap `claude_code` with `codex` to launch the OpenAI Codex CLI. Profiles can set `default_provider` to choose the preferred backend automatically.
 
 ### Coordinating Work
 

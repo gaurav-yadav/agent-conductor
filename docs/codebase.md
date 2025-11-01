@@ -9,8 +9,8 @@ This document gives a concise map of the repository so new contributors can orie
 ```
 src/
 └── agent_conductor/
-    ├── api/                 # FastAPI application (REST surface, background tasks)
-    ├── cli/                 # Click-based CLI entry points
+    ├── api/                 # FastAPI application (REST surface + background tasks)
+    ├── cli/                 # Click-based CLI entry point (single module with subcommands)
     │   └── main.py
     ├── clients/             # External clients (tmux, database)
     ├── constants.py         # Global paths, ports, prefixes
@@ -23,7 +23,7 @@ docs/
 ├── architecture-overview.md # High-level system blueprint
 ├── agent-profile.md         # Profile authoring guide
 ├── codebase.md              # (this file) repo structure & flow guide
-└── todo.md                  # Build-out checklist
+└── backlog.md               # Current backlog snapshot
 tests/                       # Placeholder for future pytest suites
 README.md                    # Quickstart and project primer
 pyproject.toml               # uv/PEP 621 project metadata & tooling config
@@ -33,7 +33,7 @@ pyproject.toml               # uv/PEP 621 project metadata & tooling config
 
 - `api/`: Defines the FastAPI app, startup/shutdown hooks, REST routes for sessions, terminals, inbox, flows, and approvals. Background tasks handle cleanup and inbox delivery loops.
 - `services/`: Encapsulates domain logic (terminal orchestration, session management, inbox queueing, approvals, flows, cleanup). Each service depends on lower-level clients and models.
-- `providers/`: Implements the contract for launching terminal-based providers (currently focused on `claude_code`) and the provider manager that caches instances.
+- `providers/`: Implements the contract for launching terminal-based providers (currently ships with `claude_code`, `codex`) and the provider manager that caches instances.
 - `clients/`: Abstractions over external systems: tmux via `libtmux`, SQLite via SQLAlchemy/SQLModel.
 - `models/`: Pydantic models (requests/responses) and enums so both API and services share a stable schema.
 - `utils/`: Cross-cutting helpers for logging configuration, filesystem setup (`~/.conductor` tree), and deterministic IDs.
@@ -48,9 +48,10 @@ pyproject.toml               # uv/PEP 621 project metadata & tooling config
 2. `uv run uvicorn agent_conductor.api.main:app` → FastAPI startup hook:
    - Calls `setup_logging()` and `ensure_runtime_directories()`.
    - Initializes SQLite engine, tmux provider manager, and all services.
-   - Launches background tasks:
-     - Cleanup loop purging completed/error terminals + orphaned log files.
+   - Launches background tasks that run until shutdown:
+     - Cleanup loop purging completed/error terminals and orphaned log files.
      - Inbox loop delivering pending messages every few seconds.
+     - Prompt watcher that scans provider output for interactive choices and forwards them to supervisors.
 
 ### Session & Terminal Lifecycle
 1. CLI `launch` command posts to `/sessions` with provider/profile details.
@@ -66,10 +67,8 @@ pyproject.toml               # uv/PEP 621 project metadata & tooling config
 5. Deleting a terminal (or entire session) triggers provider cleanup, tmux window/session teardown, and DB removal.
 
 ### Inbox Messaging
-1. MCP or CLI call `/inbox` to queue a message (`InboxStatus.PENDING`).
-2. Background inbox loop polls pending receivers:
-   - Calls `TerminalService.send_input` to inject a formatted notification.
-   - Marks messages as `DELIVERED` or `FAILED`.
+1. MCP helpers or the CLI call `/inbox` to queue a message (`InboxStatus.PENDING`).
+2. Every few seconds the background inbox loop fetches receivers with pending messages, calls `TerminalService.send_input` to inject a formatted line, and flips the status to `DELIVERED` (or `FAILED` if tmux rejects the input). The current implementation does not pause for an idle prompt, so personas should avoid sending messages while they are streaming long responses.
 
 ### Approval Workflow
 1. Risky commands (CLI `--require-approval`, MCP `request_approval`) create an `ApprovalRequest` row and log an audit entry under `~/.conductor/approvals/audit.log`.
@@ -80,7 +79,7 @@ pyproject.toml               # uv/PEP 621 project metadata & tooling config
 ### Flow Scheduling
 *Current MVP handles persistence only*:
 1. CLI `flow register/list/enable/disable/remove` manipulate `Flow` rows.
-2. Background scheduler placeholder exists; extending `FlowService` to integrate actual cron scheduling is next-step backlog.
+2. There is no active scheduler yet; extending `FlowService` to integrate an actual cron-style runner remains backlog.
 
 ---
 
@@ -102,4 +101,4 @@ pyproject.toml               # uv/PEP 621 project metadata & tooling config
 
 ---
 
-This codebase follows a layered architecture: CLI/MCP → API → services → clients/providers → external systems. Favor modifications at the appropriate layer to keep concerns separated and maintainable. Let the TODO checklist in `docs/todo.md` guide remaining polish work (documentation, tests, CI, release).***
+This codebase follows a layered architecture: CLI/MCP → API → services → clients/providers → external systems. Favor modifications at the appropriate layer to keep concerns separated and maintainable. Cross-reference the changelog and backlog notes to understand which subsystems are still evolving.
