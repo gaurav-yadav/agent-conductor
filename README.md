@@ -42,6 +42,13 @@ agent-conductor init
 
 # 2. Start the FastAPI server on the expected host/port (keep this running)
 uv run python -m uvicorn agent_conductor.api.main:app --reload --host 127.0.0.1 --port 9889
+
+#    If you are coordinating work inside a different repository (so tmux panes inherit that path),
+#    point `--project` at the Agent Conductor source and `--directory` at your target workspace:
+uv run \
+  --project /Users/you/path/to/agent-conductor \
+  --directory /Users/you/path/to/credcore-app \
+  python -m uvicorn agent_conductor.api.main:app --reload --host 127.0.0.1 --port 9889
 ```
 
 The CLI speaks to the REST API at `http://127.0.0.1:9889` by default and manages tmux sessions, providers, inbox messaging, flows, and approval workflows.
