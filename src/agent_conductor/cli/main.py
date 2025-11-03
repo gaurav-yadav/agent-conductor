@@ -25,7 +25,7 @@ def _request(method: str, path: str, payload: Optional[Dict[str, Any]] = None) -
     return None
 
 
-@click.group(help="Agent Conductor command-line interface.")
+@click.group(help="Agent Conductor CLI for orchestrating tmux-based agents (providers: claude_code, codex, q_cli).")
 def cli() -> None:
     """Root command for Agent Conductor."""
     setup_logging()
@@ -62,7 +62,11 @@ def install(source: str, name: Optional[str], scope: str, force: bool) -> None:
 
 
 @cli.command()
-@click.option("--provider", required=True, help="Provider key (e.g., claude_code).")
+@click.option(
+    "--provider",
+    required=True,
+    help="Provider key (e.g., claude_code, codex, q_cli).",
+)
 @click.option("--agent-profile", help="Agent profile name used for the terminal.")
 @click.option("--role", default="supervisor", show_default=True, help="Role for window naming.")
 @click.option(
@@ -97,7 +101,11 @@ def list_sessions() -> None:
 
 @cli.command()
 @click.argument("session_name")
-@click.option("--provider", required=True, help="Provider key for the worker (e.g., claude_code).")
+@click.option(
+    "--provider",
+    required=True,
+    help="Provider key for the worker (e.g., claude_code, codex, q_cli).",
+)
 @click.option("--agent-profile", help="Agent profile for the worker.")
 @click.option("--role", default="worker", show_default=True, help="Role label.")
 def worker(session_name: str, provider: str, agent_profile: Optional[str], role: str) -> None:

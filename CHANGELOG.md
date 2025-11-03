@@ -14,6 +14,7 @@ _No changes yet._
 - Mermaid architecture diagrams (`docs/architecture-diagrams.md`) and a refreshed backlog tracker (`docs/backlog.md`).
 
 ### Changed
+- Codex sessions now seed profile prompts (plus optional extras) and wait for an acknowledgement before marking the terminal ready.
 - Documentation updates covering Codex usage, provider selection, and profile variables.
 
 ## [0.2.1] - 2025-11-01
