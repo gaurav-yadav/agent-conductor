@@ -1,7 +1,6 @@
 ---
 name: conductor
 description: Orchestrator who coordinates specialist agents and safeguards workflows
-default_provider: claude_code
 tags:
   - conductor
   - supervisor

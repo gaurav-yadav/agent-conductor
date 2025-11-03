@@ -224,7 +224,7 @@ When the rename lands, update references accordingly.
 
 ### Provider-specific variables
 
-- **Codex**: set `model` to choose the Codex model, `variables.codex_args` for extra CLI flags, and `variables.codex_env` for additional `KEY=VALUE` pairs appended to the launch environment. Defaults keep Codex in `~/.conductor/providers/codex/<terminal-id>` with recorder disabled.
+- **Codex**: set `model` to choose the Codex model, `variables.codex_args` for extra CLI flags, and `variables.codex_env` for additional `KEY=VALUE` pairs appended to the launch environment. Defaults keep Codex in `~/.conductor/providers/codex/<terminal-id>` with recorder disabled. The provider sends the profile `prompt` + `body` as an initial instruction (notes are never forwarded); append extra wording with `variables.codex_seed_message` or require a custom acknowledgement via `variables.codex_seed_ack`.
 
 ## Testing Profiles Locally
 

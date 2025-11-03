@@ -59,6 +59,7 @@ class CodexProvider(BaseProvider):
     ) -> None:
         super().__init__(terminal_id, session_name, window_name, agent_profile, tmux)
         self._profile = None
+        self._persona_seeded = False
         if agent_profile:
             try:
                 self._profile = load_agent_profile(agent_profile)
@@ -141,6 +142,7 @@ class CodexProvider(BaseProvider):
             raise ProviderInitializationError("Codex initialization timed out.")
 
         self._status = TerminalStatus.READY
+        self._seed_persona()
 
     def _wait_for_status(
         self,
@@ -212,3 +214,92 @@ class CodexProvider(BaseProvider):
             return text
 
         raise ValueError("No Codex response detected in history.")
+
+    def _build_persona_seed_message(self) -> Optional[str]:
+        if not self._profile:
+            return None
+
+        pieces = []
+        if self._profile.prompt:
+            pieces.append(self._profile.prompt.strip())
+        if self._profile.body:
+            pieces.append(self._profile.body.strip())
+
+        extra = self._profile_var("codex_seed_message")
+        if extra:
+            pieces.append(extra.strip())
+
+        message = "\n\n".join(part for part in pieces if part)
+        if not message:
+            return None
+
+        acknowledgement = (
+            "\n\nPlease acknowledge these instructions and confirm you are ready to coordinate this session."
+        )
+        return message + acknowledgement
+
+    def _seed_persona(self) -> None:
+        if self._persona_seeded:
+            return
+        seed_message = self._build_persona_seed_message()
+        if not seed_message:
+            return
+        LOG.info(
+            "Seeding Codex persona instructions for terminal %s (profile=%s)",
+            self.terminal_id,
+            self._profile.name,
+        )
+        started_at = time.time()
+        self._status = TerminalStatus.RUNNING
+        self.tmux.send_keys(
+            self.session_name,
+            self.window_name,
+            seed_message,
+            suppress_history=True,
+        )
+        try:
+            self._wait_for_seed_ack(timeout=15.0)
+        except ProviderInitializationError:
+            raise
+        self._persona_seeded = True
+        self._status = TerminalStatus.READY
+        LOG.debug(
+            "Codex persona seed completed for terminal %s in %.1fs",
+            self.terminal_id,
+            time.time() - started_at,
+        )
+
+    def _wait_for_seed_ack(self, timeout: float) -> None:
+        ack_phrase = self._profile_var("codex_seed_ack")
+        if ack_phrase:
+            ack_phrase = ack_phrase.strip()
+        if not ack_phrase:
+            if not self._wait_for_status(
+                TerminalStatus.READY,
+                timeout=timeout,
+                polling_interval=0.5,
+            ):
+                raise ProviderInitializationError(
+                    "Codex persona seeding timed out before the idle prompt returned."
+                )
+            return
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            history = self.tmux.capture_pane(self.session_name, self.window_name)
+            if ack_phrase in history:
+                remaining = max(0.5, deadline - time.time())
+                if not self._wait_for_status(
+                    TerminalStatus.READY,
+                    timeout=remaining,
+                    polling_interval=0.5,
+                ):
+                    raise ProviderInitializationError(
+                        "Codex acknowledged persona seeding but the prompt did not return."
+                    )
+                return
+            time.sleep(0.5)
+
+        raise ProviderInitializationError(
+            "Codex persona seeding timed out waiting for the acknowledgement phrase."
+        )

@@ -80,11 +80,25 @@ class TmuxClient:
         window = self._get_window(session_name, window_name)
         window.kill_window()
 
-    def send_keys(self, session_name: str, window_name: str, keys: str) -> None:
+    def send_keys(
+        self,
+        session_name: str,
+        window_name: str,
+        keys: str,
+        *,
+        enter: bool = True,
+        suppress_history: bool = False,
+        literal: bool = False,
+    ) -> None:
         """Send keystrokes to a specific window."""
         window = self._get_window(session_name, window_name)
         pane = window.attached_pane
-        pane.send_keys(keys, enter=True)
+        pane.send_keys(
+            keys,
+            enter=enter,
+            suppress_history=suppress_history,
+            literal=literal,
+        )
 
     def capture_pane(
         self,
