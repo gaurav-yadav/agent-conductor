@@ -3,6 +3,7 @@
 **CLI-first orchestrator for multi-agent tmux workflows—supervisor/worker delegation, inbox messaging, and approval gates for Claude Code, Codex, and extensible providers.**
 
 Agent Conductor solves the coordination problem for terminal-based AI agents. When you need multiple agents working together—a supervisor delegating to specialists, tracking progress, and gating dangerous commands—you need more than tmux and shell scripts. Agent Conductor provides structured session management, inter-agent messaging, and a REST API, all backed by SQLite for persistence across restarts.
+<img width="1512" height="891" alt="Screenshot 2025-12-28 at 10 17 30 PM" src="https://github.com/user-attachments/assets/72759536-2187-44c3-8c6e-4366430168a7" />
 
 Built for engineers who want agentic workflows without IDE lock-in.
 
@@ -43,7 +44,6 @@ Running one AI agent is easy. Running three agents—a supervisor that delegates
 ```
 
 Each terminal runs a provider (Claude Code, Codex) with a unique ID. The supervisor coordinates via CLI commands or MCP tools. All output is logged to `~/.conductor/logs/terminal/`.
-<img width="1512" height="891" alt="Screenshot 2025-12-28 at 10 17 30 PM" src="https://github.com/user-attachments/assets/72759536-2187-44c3-8c6e-4366430168a7" />
 
 ## Quickstart
 
