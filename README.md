@@ -43,6 +43,7 @@ Running one AI agent is easy. Running three agents—a supervisor that delegates
 ```
 
 Each terminal runs a provider (Claude Code, Codex) with a unique ID. The supervisor coordinates via CLI commands or MCP tools. All output is logged to `~/.conductor/logs/terminal/`.
+<img width="1512" height="891" alt="Screenshot 2025-12-28 at 10 17 30 PM" src="https://github.com/user-attachments/assets/72759536-2187-44c3-8c6e-4366430168a7" />
 
 ## Quickstart
 
