@@ -1,172 +1,292 @@
 # Agent Conductor
 
-Agent Conductor is a CLI-first orchestrator for coordinating multiple terminal-based AI agents inside tmux sessions. The project prioritizes a clear separation of concerns, simple primitives, and SOLID-aligned service boundaries.
+**CLI-first orchestrator for multi-agent tmux workflows—supervisor/worker delegation, inbox messaging, and approval gates for Claude Code, Codex, and extensible providers.**
 
-Refer to `Agent.md` for agent-facing instructions, `docs/architecture-overview.md` for a detailed system blueprint, `docs/architecture-diagrams.md` for visual diagrams, and `docs/backlog.md` for the current roadmap.
+Agent Conductor solves the coordination problem for terminal-based AI agents. When you need multiple agents working together—a supervisor delegating to specialists, tracking progress, and gating dangerous commands—you need more than tmux and shell scripts. Agent Conductor provides structured session management, inter-agent messaging, and a REST API, all backed by SQLite for persistence across restarts.
 
-## Requirements
+Built for engineers who want agentic workflows without IDE lock-in.
 
-- [uv](https://docs.astral.sh/uv/) for dependency management and isolated virtualenvs
-- `jq` for parsing JSON command output
-- `tmux` 3.x+ (used for terminal multiplexing)
-- (Optional) `pbcopy`/`pbpaste` helpers on macOS for easier clipboard ↔ tmux workflow
+<!-- TODO: Add demo GIF showing launch → delegate → output flow -->
 
-Install `jq`/`tmux` via your system package manager (`brew install jq tmux` on macOS).
+## Why Agent Conductor?
 
-## Installation
+Running one AI agent is easy. Running three agents—a supervisor that delegates to a developer and a tester—while maintaining state, enabling communication, and preventing footguns? That's hard.
 
-Agent Conductor ships as an installable CLI. The recommended path is via `uv tool install` straight from Git (pin to a release tag when available).
+**Without Agent Conductor:**
+- Manual tmux session juggling
+- Copy-paste between panes for agent communication
+- No visibility into what each agent is doing
+- Risky commands execute immediately with no review
 
-```bash
-# Install or upgrade from the latest main branch
-uv tool install --force-reinstall --upgrade \
-  --from git+https://github.com/gaurav-yadav/agent-conductor.git \
-  agent-conductor
+**With Agent Conductor:**
+- One command launches a full supervisor + worker topology
+- Inbox messaging lets agents communicate programmatically
+- REST API and dashboard provide real-time visibility
+- Approval workflow gates destructive commands with audit trail
 
-# Pin to a specific release tag (recommended for stability)
-uv tool install --force-reinstall --upgrade \
-  --from git+https://github.com/gaurav-yadav/agent-conductor.git@v0.1.0-rc1 \
-  agent-conductor
+## What It Looks Like
 
-# Verify the CLI is on PATH and ready
-agent-conductor --help
+```
+┌──────────────────────────────────────────────────────────────┐
+│                 tmux session: conductor-abc123               │
+├──────────────────┬───────────────────┬───────────────────────┤
+│    Supervisor    │     Developer     │       Tester          │
+│   (conductor)    │     (worker)      │      (worker)         │
+│                  │                   │                       │
+│  Delegates ────► │  Implements ────► │  Validates            │
+│  Aggregates ◄─── │  Reports ◄─────── │  Reports ◄────────    │
+└──────────────────┴───────────────────┴───────────────────────┘
+         │                   │                   │
+         └───────────────────┴───────────────────┘
+                    SQLite + REST API
+                  (state, inbox, approvals)
 ```
 
-The CLI depends on a running FastAPI server. After installation, follow the first-time setup commands below to initialize runtime directories and start the API.
+Each terminal runs a provider (Claude Code, Codex) with a unique ID. The supervisor coordinates via CLI commands or MCP tools. All output is logged to `~/.conductor/logs/terminal/`.
 
-## First-Time Setup
+## Quickstart
+
+**Prerequisites:** Python 3.11+, tmux 3.x+, [uv](https://docs.astral.sh/uv/), `jq`
 
 ```bash
-# 1. Initialize local runtime directories and SQLite database
+# Install the CLI
+uv tool install --from git+https://github.com/gaurav-yadav/agent-conductor.git agent-conductor
+
+# Initialize runtime directories and SQLite database
 agent-conductor init
 
-# 2. Start the FastAPI server on the expected host/port (keep this running)
-uv run python -m uvicorn agent_conductor.api.main:app --reload --host 127.0.0.1 --port 9889
-
-#    If you are coordinating work inside a different repository (so tmux panes inherit that path),
-#    point `--project` at the Agent Conductor source and `--directory` at your target workspace:
-uv run \
-  --project /Users/you/path/to/agent-conductor \
-  --directory /Users/you/path/to/credcore-app \
-  python -m uvicorn agent_conductor.api.main:app --reload --host 127.0.0.1 --port 9889
+# Start the API server (keep running in a separate terminal)
+uv run uvicorn agent_conductor.api.main:app --host 127.0.0.1 --port 9889
 ```
 
-The CLI speaks to the REST API at `http://127.0.0.1:9889` by default and manages tmux sessions, providers, inbox messaging, flows, and approval workflows.
-
-## Launching a Session
-
-Automated launch and teardown helpers live in `scripts/`:
+In another terminal:
 
 ```bash
-# (Optional) seed the kickoff message the conductor should receive immediately after launch
-export AC_INITIAL_INSTRUCTION="Please run an end-to-end coordination for the test workspace."
+# Launch supervisor with developer and tester workers
+RESULT=$(agent-conductor launch --provider claude_code --agent-profile conductor \
+  --with-worker developer --with-worker tester)
 
-# 3. Launch conductor + developer/tester/reviewer workers
-./scripts/launch_agents.sh
+# Extract IDs
+SESSION=$(echo "$RESULT" | jq -r '.session_name')
+CONDUCTOR_ID=$(echo "$RESULT" | jq -r '.supervisor.id')
+
+# Send a task to the conductor
+agent-conductor send "$CONDUCTOR_ID" --message "Write a function that adds two numbers, then have it tested."
+
+# Attach to tmux to observe all agents working (Ctrl-B + 0/1/2 to switch panes)
+tmux attach-session -t "$SESSION"
 ```
 
-The script prints the session name and terminal IDs for each worker. It sends the `AC_INITIAL_INSTRUCTION` to the conductor if the variable is non-empty (a default E2E smoke instruction is bundled in the script).
-
-### Manual Launch (fallback)
+When finished:
 
 ```bash
-# Start a conductor-supervised session
-agent-conductor launch --provider claude_code --agent-profile conductor
-
-# Optionally launch common workers immediately
-agent-conductor launch --provider claude_code --agent-profile conductor \
-  --with-worker developer \
-  --with-worker tester \
-  --with-worker reviewer
-
-# Attach specialists manually (reuse <session-name> printed above)
-agent-conductor worker <session-name> --provider claude_code --agent-profile developer
-agent-conductor worker <session-name> --provider claude_code --agent-profile tester
-agent-conductor worker <session-name> --provider claude_code --agent-profile reviewer
-```
-
-> Tip: swap `claude_code` with `codex` to launch the OpenAI Codex CLI. Profiles can set `default_provider` to choose the preferred backend automatically.
-
-### Coordinating Work
-
-Use `agent-conductor send <terminal-id> --message "..."` to relay instructions or status updates between terminals.
-
-Helper commands:
-
-```bash
-# List active sessions and terminals
+# Check active sessions
 agent-conductor sessions
 
-# Capture recent output
-agent-conductor output <terminal-id> --mode last
+# Close terminals (or let conductor close them)
+agent-conductor close "$CONDUCTOR_ID"
 ```
 
-The `test-workspace/` directory provides sample scripts for end-to-end smoke tests (`test-workspace/add.js`, etc.).
+## Features
 
-### Web Dashboard
+- **Multi-agent coordination** — Supervisor + worker topology with role-based delegation
+- **Provider abstraction** — Claude Code, OpenAI Codex, or implement your own via `BaseProvider`
+- **Agent profiles** — Markdown files with YAML frontmatter define behavior without code changes
+- **Inbox messaging** — Async communication between agents via `send-message` / `inbox` commands
+- **Approval workflow** — Gate dangerous commands with `--require-approval`, explicit approve/deny, audit trail
+- **REST API** — Programmatic control at `http://127.0.0.1:9889` (sessions, terminals, inbox, approvals)
+- **Web dashboard** — Visual monitoring at `/dashboard`
+- **tmux-native** — Sessions persist across disconnects; full history logged to disk
+- **MCP tools** — Agents can self-orchestrate via `handoff`, `assign`, `send_message` primitives
+- **Profile scoping** — Project-local overrides via `.conductor/agent-context/`
 
-The FastAPI server now ships with a lightweight dashboard that surfaces active sessions, worker prompts, and pending approvals.
+## Use Cases
 
-1. Start the API server:
-   ```bash
-   uv run python -m uvicorn agent_conductor.api.main:app --reload
-   ```
-2. Open `http://127.0.0.1:9889/dashboard` in your browser.
-3. From the dashboard you can:
-   - Launch or close workers via the **Sessions** table.
-   - Review `[PROMPT]` notifications and send the suggested response commands.
-   - Approve or deny human-in-the-loop requests.
+### Coordinated Feature Development
 
-Actions performed in the dashboard call the same REST endpoints as the CLI, so terminal operators can see updates immediately.
-
-### Installing Persona Profiles
-
-Bundle profiles (`conductor`, `developer`, `tester`, `reviewer`) are available immediately. To customize or add your own personas, install them into your user or project catalog:
+A conductor receives your feature request, delegates implementation to a developer worker, sends the result to a tester worker, aggregates feedback, and reports a unified summary.
 
 ```bash
-# Copy a bundled profile into your user catalog
+agent-conductor launch --provider claude_code --agent-profile conductor \
+  --with-worker developer --with-worker tester
+agent-conductor send "$CONDUCTOR_ID" --message "Implement user authentication with tests"
+```
+
+### Parallel Research Agents
+
+Launch multiple workers for independent research tasks. Poll status or let them report to the supervisor's inbox when complete.
+
+```bash
+# Spawn additional workers into an existing session
+agent-conductor worker "$SESSION" --provider claude_code --agent-profile developer
+agent-conductor worker "$SESSION" --provider codex --agent-profile developer
+```
+
+### Approval-Gated Commands
+
+Dangerous commands require explicit approval. The supervisor receives a request, you review it, and approve or deny with a reason logged to `~/.conductor/approvals/audit.log`.
+
+```bash
+# Worker requests approval for a risky command
+agent-conductor send "$WORKER_ID" --message "rm -rf ./temp" \
+  --require-approval --supervisor "$CONDUCTOR_ID"
+
+# Review and act
+agent-conductor approvals --status PENDING
+agent-conductor approve 1
+# or: agent-conductor deny 1 --reason "Too broad, specify directory"
+```
+
+## What This Is / What This Isn't
+
+| Agent Conductor is... | Agent Conductor is NOT... |
+|---|---|
+| Local orchestrator for terminal AI agents | Cloud-hosted agent platform |
+| CLI-first with REST API | IDE plugin or VS Code extension |
+| Provider-agnostic (Claude Code, Codex, extensible) | Locked to a single LLM vendor |
+| Coordination primitives (sessions, inbox, approvals) | Agent framework with built-in planning/reasoning |
+| Stateless server + SQLite | Distributed system requiring Redis/Postgres |
+| Designed for power users and automation | No-code GUI builder |
+
+## Limitations & Non-Goals
+
+**Current limitations:**
+- **Local only** — Server binds to `127.0.0.1`, no authentication (assumes trusted local execution)
+- **No remote workers** — All tmux sessions run on the same host
+- **Flow scheduling is placeholder** — `flow` commands exist but cron evaluation isn't implemented
+- **Inbox delivery is timer-based** — Messages inject every 5 seconds, not on agent idle detection
+- **Minimal test coverage** — Core paths tested; edge cases need work
+
+**Non-goals:**
+- Replacing agent frameworks (AutoGPT, CrewAI)—Agent Conductor coordinates CLI tools, not agent logic
+- GUI-first experience—CLI is the primary interface
+- Non-terminal agents (browser-based, API-only agents)
+
+## CLI Reference
+
+| Command | Purpose |
+|---------|---------|
+| `agent-conductor init` | Initialize `~/.conductor/` directories and SQLite database |
+| `agent-conductor launch` | Create session with supervisor terminal |
+| `agent-conductor worker <session>` | Spawn worker in existing session |
+| `agent-conductor send <terminal-id>` | Send input to a terminal |
+| `agent-conductor output <terminal-id>` | Fetch terminal output (`--mode full` or `--mode last`) |
+| `agent-conductor close <terminal-id>` | Terminate a terminal |
+| `agent-conductor sessions` | List active sessions and terminals |
+| `agent-conductor send-message` | Queue inbox message between terminals |
+| `agent-conductor inbox <terminal-id>` | List messages for a terminal |
+| `agent-conductor approvals` | List approval requests |
+| `agent-conductor approve <id>` | Approve a pending command |
+| `agent-conductor deny <id>` | Deny a pending command |
+| `agent-conductor personas` | List available agent profiles |
+| `agent-conductor install <source>` | Install agent profile (bundled or local file) |
+
+Run `agent-conductor --help` or `agent-conductor <command> --help` for full options.
+
+## Architecture
+
+```
+CLI (Click)
+    │ HTTP
+    ▼
+FastAPI Server ──► Background Tasks (cleanup, inbox delivery, prompt watcher)
+    │
+    ├──► TerminalService ──► TmuxClient (libtmux)
+    ├──► InboxService ──────► SQLite
+    ├──► ApprovalService ───► SQLite + audit.log
+    └──► ProviderManager
+              │
+              ├── ClaudeCodeProvider
+              ├── CodexProvider
+              └── (extensible)
+```
+
+**Key paths:**
+- Runtime data: `~/.conductor/`
+- Database: `~/.conductor/db/conductor.db`
+- Terminal logs: `~/.conductor/logs/terminal/<id>.log`
+- Agent profiles: `~/.conductor/agent-context/` (user) or `.conductor/agent-context/` (project)
+
+See `docs/architecture-overview.md` for the full blueprint.
+
+## Configuration
+
+Agent profiles are markdown files with YAML frontmatter:
+
+```markdown
+---
+name: my-specialist
+description: Custom specialist for specific tasks
+default_provider: claude_code
+tags: [custom, specialist]
+---
+
+# Role
+You are a specialist agent focused on [specific domain].
+
+# Instructions
+- Do X
+- Avoid Y
+```
+
+Install custom profiles:
+
+```bash
+# Install bundled profile to user scope
 agent-conductor install developer
 
-# Install a custom profile for the current repository
-agent-conductor install ./my-custom-agent.md --scope project
-
-# List bundled and installed personas
-agent-conductor personas
+# Install local file to project scope
+agent-conductor install ./my-specialist.md --scope project
 ```
 
-Profiles installed in a project-local `.conductor/agent-context/` directory take precedence over user-level installs, allowing per-repo overrides without touching global state.
+## Running the API Server
 
-When a worker needs an interactive decision, the supervisor inbox receives a `[PROMPT]` message with the relevant context and a suggested response command (for example, `agent-conductor send <worker-id> --message "1"`). Reply from the conductor terminal to keep all coordination in one pane.
-
-> Release managers: see `docs/release-checklist.md` for tagging, verification, and announcement steps.
-
-## Teardown
+The CLI communicates with a local FastAPI server. Start it before using other commands:
 
 ```bash
-# Gracefully close every terminal and matching tmux session
-./scripts/teardown_agents.sh
+# Standard startup
+uv run uvicorn agent_conductor.api.main:app --host 127.0.0.1 --port 9889
 
-# Disable tmux cleanup (if you want panes left open)
-AC_KILL_TMUX=false ./scripts/teardown_agents.sh
+# With hot reload during development
+uv run uvicorn agent_conductor.api.main:app --reload --host 127.0.0.1 --port 9889
 
-# Manually close a single terminal if needed
-agent-conductor close <terminal-id>
+# Working in a different repository (tmux panes inherit that directory)
+uv run --project /path/to/agent-conductor --directory /path/to/your-project \
+  uvicorn agent_conductor.api.main:app --host 127.0.0.1 --port 9889
 ```
 
-## Resetting a Broken Run
+Dashboard available at `http://127.0.0.1:9889/dashboard`.
 
-If tmux sessions or database entries get out of sync:
+## Resetting State
+
+If tmux sessions or database get out of sync:
 
 ```bash
-# Stop the API server if it is running
-# then clear state and reinitialize
+# Stop the API server, then:
 rm ~/.conductor/db/conductor.db
 agent-conductor init
 
-# Remove any lingering tmux sessions
-tmux kill-server  # safe even if no server is running
+# Kill any lingering tmux sessions
+tmux kill-server
 ```
 
-After this reset, restart the API server and relaunch the conductor + workers as shown in the quickstart above.
+## Documentation
 
-> Note: If a tmux pane is closed manually or crashes, `agent-conductor close <terminal-id>` now cleans up the database even when the tmux window no longer exists. The service logs a warning instead of failing with a 500 error.
+| Document | Purpose |
+|----------|---------|
+| `Agent.md` | Operating guide for AI agents |
+| `docs/architecture-overview.md` | Full system blueprint |
+| `docs/agent-profile.md` | Profile schema specification |
+| `docs/test-plan.md` | Manual smoke test procedures |
+| `docs/communication-strategies.md` | Messaging patterns |
+| `CHANGELOG.md` | Version history |
+
+## License
+
+MIT
+
+---
+
+**Topics:** `agents` `cli` `orchestration` `tmux` `multi-agent` `ai-agents` `claude` `codex` `terminal` `automation` `mcp`
+
+**GitHub subtitle:** CLI orchestrator for multi-agent tmux sessions—Claude Code, Codex, and more
