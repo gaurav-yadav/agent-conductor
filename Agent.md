@@ -1,60 +1,88 @@
 # Agent Operating Guide
 
+> **CLI Alias:** `acd` is a short alias for `agent-conductor`. All examples use the short form, but you can substitute `agent-conductor` if preferred.
+
 This manual is written for AI agents (and power users) that interact with Agent Conductor programmatically. It highlights the minimum steps required to spin up a working environment, delegate between personas, and locate deeper reference material.
 
 ## Core Workflow
 
 1. **Initialize runtime state** (run once per machine):
    ```bash
-   agent-conductor init
+   acd init
    ```
 2. **Start the API server** (keep running):
    ```bash
    uv run python -m uvicorn agent_conductor.api.main:app \
      --host 127.0.0.1 --port 9889 --reload
+   ```
+3. **Launch the conductor** (provider defaults to `claude_code`):
+   ```bash
+   acd launch --agent-profile conductor
+   ```
+   Terminal IDs are now 8 characters (e.g., `a1b2c3d4`).
 
-   # Or, when you need tmux panes rooted in another repository, point
-   # --project to the agent-conductor source and --directory to your workspace:
-   uv run \
-     --project /Users/you/path/to/agent-conductor \
-     --directory /Users/you/path/to/credcore-app \
-     python -m uvicorn agent_conductor.api.main:app \
-     --host 127.0.0.1 --port 9889 --reload
-   ```
-3. **Launch the conductor (supervisor) terminal**:
+4. **Attach specialists** (provider defaults to `claude_code`):
    ```bash
-   agent-conductor launch \
-     --provider claude_code \
-     --agent-profile conductor
+   acd worker <session-name> --agent-profile developer
+   acd worker <session-name> --agent-profile tester
+   acd worker <session-name> --agent-profile reviewer
    ```
-   Capture the resulting JSON; you will need the `session_name` and conductor terminal `id`.
-4. **Attach specialists to the same session**:
-   ```bash
-   agent-conductor launch --provider claude_code --agent-profile conductor \
-     --with-worker developer --with-worker tester --with-worker reviewer
 
-   # or launch workers individually
-   agent-conductor worker <session-name> --provider claude_code --agent-profile developer
-   agent-conductor worker <session-name> --provider claude_code --agent-profile tester
-   agent-conductor worker <session-name> --provider claude_code --agent-profile reviewer
-   ```
-5. **Communicate via the CLI relay** (default strategy):
+5. **Communicate via CLI relay**:
    ```bash
-   agent-conductor send <terminal-id> --message "Instruction or status update"
+   acd send <id> --message "Instruction"   # or: acd s <id> -m "..."
    ```
-   - Conductor produces ready-to-send snippets for each worker.
-   - Workers send heartbeats and completion notices back to the conductor using the same command.
-   - When a worker requires a menu choice, the supervisor receives a `[PROMPT]` inbox message; reply with `agent-conductor send <worker-id> --message "<choice>"`.
-6. **Observe output or status when needed**:
+
+6. **Observe and debug**:
    ```bash
-   agent-conductor output <terminal-id> --mode last
-   agent-conductor sessions
+   acd ls                    # list sessions (alias)
+   acd session <name>        # detailed session view
+   acd status <id>           # quick terminal status
+   acd out <id> --mode last  # get output (alias)
+   acd logs <id> -f          # follow terminal logs
+   acd health                # check server status
    ```
-7. **Tear down gracefully**:
+
+7. **Attach to view live terminal**:
    ```bash
-   agent-conductor close <terminal-id>
+   acd attach <session-or-id>   # or: acd a <target>
    ```
-   The service will log a warning (not an error) if the tmux pane has already been closed.
+
+8. **Tear down**:
+   ```bash
+   acd rm <id>              # close single terminal (alias)
+   acd k <session> -f       # kill entire session (alias)
+   ```
+
+## Command Aliases (Quick Reference)
+
+> **Note:** `acd` is a short alias for `agent-conductor`. Use whichever you prefer.
+
+| Full | Alias | Example |
+|------|-------|---------|
+| `sessions` | `ls` | `acd ls` |
+| `output` | `out` | `acd out abc123` |
+| `send` | `s` | `acd s abc123 -m "hello"` |
+| `attach` | `a` | `acd a conductor-xyz` |
+| `close` | `rm` | `acd rm abc123` |
+| `kill` | `k` | `acd k conductor-xyz -f` |
+
+## Self-Awareness for Agents
+
+Every agent terminal has the `CONDUCTOR_TERMINAL_ID` environment variable set. Use it to:
+- Know your own identity: `echo $CONDUCTOR_TERMINAL_ID`
+- Check your status: `acd status $CONDUCTOR_TERMINAL_ID`
+- View your logs: `acd logs $CONDUCTOR_TERMINAL_ID`
+- Find your session: `acd ls` and look for your ID
+
+## Debugging Issues
+
+When something goes wrong:
+1. **Check server**: `acd health`
+2. **Check session state**: `acd session <session-name>`
+3. **View terminal logs**: `acd logs <id> -n 100`
+4. **Attach to see live**: `acd attach <id>`
+5. **Check all sessions**: `acd ls`
 
 ## Reference Map
 
@@ -70,7 +98,7 @@ This manual is written for AI agents (and power users) that interact with Agent 
 
 ## Best Practices for Agents
 
-- **Reuse existing workers**: Ask the operator to run `agent-conductor sessions` before requesting new terminals. Launch additional workers only when the required role is missing.
+- **Reuse existing workers**: Ask the operator to run `acd sessions` (or `acd ls`) before requesting new terminals. Launch additional workers only when the required role is missing.
 - **Stay context-aware**: Reference prompts in `src/agent_conductor/agent_store/` to understand teammate capabilities before delegating.
 - **Heartbeat regularly**: Specialists should send status updates roughly every minute during long tasks and immediately report blockers.
 - **Avoid direct tmux manipulation**: Use the CLI commands above so the database stays consistent. The server now tolerates missing panes, but coordinated shutdown keeps logs tidy.

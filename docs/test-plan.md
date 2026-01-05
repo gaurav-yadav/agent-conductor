@@ -1,5 +1,7 @@
 # Agent Conductor Manual Smoke Test
 
+> **Tip:** `acd` is a short alias for `agent-conductor`. All commands below can use either form.
+
 This walkthrough validates the multi-persona workflow that ships with Agent Conductor. You will:
 
 1. Launch the conductor (supervisor) and three specialists inside a single tmux session.
@@ -9,7 +11,7 @@ This walkthrough validates the multi-persona workflow that ships with Agent Cond
 
 The instructions assume:
 
-- Repository path: `/Users/gaurav/exp/drummer/agent-conductor`
+- You are running from the `agent-conductor` repository root.
 - Python ≥ 3.11, tmux ≥ 3.0, Node.js, and the `claude` CLI are installed.
 - The repo was synced with `uv sync`.
 
@@ -18,8 +20,8 @@ The instructions assume:
 ## 1. Environment bootstrap
 
 ```bash
-cd /Users/gaurav/exp/drummer/agent-conductor
-agent-conductor init
+cd /path/to/agent-conductor
+acd init   # or: agent-conductor init
 ```
 
 ## 2. Start the API (leave running)
@@ -33,7 +35,7 @@ uv run python -m uvicorn agent_conductor.api.main:app \
 
 ```bash
 SUMMARY=$(
-  agent-conductor launch \
+  acd launch \
     --provider claude_code \
     --agent-profile conductor \
     --with-worker developer \
@@ -41,76 +43,54 @@ SUMMARY=$(
     --with-worker reviewer
 )
 echo "$SUMMARY" | jq .
-CONDUCTOR_ID=$(echo "$SUMMARY" | jq -r '.terminals[] | select(.window_name=="supervisor-conductor").id')
 SESSION_NAME=$(echo "$SUMMARY" | jq -r '.name')
-DEV_ID=$(echo "$SUMMARY" | jq -r '.terminals[] | select(.window_name=="worker-developer").id')
-TEST_ID=$(echo "$SUMMARY" | jq -r '.terminals[] | select(.window_name=="worker-tester").id')
-REVIEW_ID=$(echo "$SUMMARY" | jq -r '.terminals[] | select(.window_name=="worker-reviewer").id')
+CONDUCTOR_ID=$(echo "$SUMMARY" | jq -r '.terminals[] | select(.window_name | startswith("supervisor-")).id')
+DEV_ID=$(echo "$SUMMARY" | jq -r '.terminals[] | select(.window_name | startswith("worker-developer-")).id')
+TEST_ID=$(echo "$SUMMARY" | jq -r '.terminals[] | select(.window_name | startswith("worker-tester-")).id')
+REVIEW_ID=$(echo "$SUMMARY" | jq -r '.terminals[] | select(.window_name | startswith("worker-reviewer-")).id')
 ```
 
-## 4. Launch specialists in the same session
-
-```bash
-DEV_JSON=$(
-  agent-conductor worker "$SESSION_NAME" \
-    --provider claude_code \
-    --agent-profile developer
-)
-TEST_JSON=$(
-  agent-conductor worker "$SESSION_NAME" \
-    --provider claude_code \
-    --agent-profile tester
-)
-REVIEW_JSON=$(
-  agent-conductor worker "$SESSION_NAME" \
-    --provider claude_code \
-    --agent-profile reviewer
-)
-
-DEV_ID=$(echo "$DEV_JSON" | jq -r '.id')
-TEST_ID=$(echo "$TEST_JSON" | jq -r '.id')
-REVIEW_ID=$(echo "$REVIEW_JSON" | jq -r '.id')
-```
+If you prefer to launch workers manually, omit the `--with-worker` flags above and run `acd worker "$SESSION_NAME" --provider claude_code --agent-profile <role>` for each specialist.
 
 The tmux layout now contains one session (`$SESSION_NAME`) with four windows: conductor plus developer/tester/reviewer.
 
-## 5. Assign work to the conductor
+## 4. Assign work to the conductor
 
 ```bash
-agent-conductor send "$CONDUCTOR_ID" --message $'We are working in /Users/gaurav/exp/drummer/agent-conductor/test-workspace.\nCoordinate the new authentication module exercise from the README:\n1. Developer updates add.js with proper validation and docs.\n2. Tester runs node test-workspace/add.js and reports output.\n3. Reviewer inspects the change and summarizes findings.\nUse the existing worker terminals.'
+acd send "$CONDUCTOR_ID" --message $'We are working in test-workspace/.\nCoordinate the new authentication module exercise from the README:\n1. Developer updates add.js with proper validation and docs.\n2. Tester runs node test-workspace/add.js and reports output.\n3. Reviewer inspects the change and summarizes findings.\nUse the existing worker terminals.'
 ```
 
-Wait for the conductor to outline its plan (`agent-conductor output "$CONDUCTOR_ID" --mode last`).
+Wait for the conductor to outline its plan (`acd output "$CONDUCTOR_ID" --mode last`).
 
-## 6. Relay instructions to specialists
+## 5. Relay instructions to specialists
 
 Use the command snippets produced by the conductor or send direct instructions:
 
 ```bash
-agent-conductor send "$DEV_ID" --message "Implement the add.js improvements the conductor described. Work inside test-workspace/add.js and report when complete."
-agent-conductor send "$TEST_ID" --message "After developer reports completion, run node test-workspace/add.js and send the output plus pass/fail status."
-agent-conductor send "$REVIEW_ID" --message "When developer and tester are done, review test-workspace/add.js, highlight issues, and approve or request fixes."
+acd send "$DEV_ID" --message "Implement the add.js improvements the conductor described. Work inside test-workspace/add.js and report when complete."
+acd send "$TEST_ID" --message "After developer reports completion, run node test-workspace/add.js and send the output plus pass/fail status."
+acd send "$REVIEW_ID" --message "When developer and tester are done, review test-workspace/add.js, highlight issues, and approve or request fixes."
 ```
 
 As each worker progresses, they should send heartbeats and completion notices back to the conductor:
 
 ```bash
-agent-conductor send "$CONDUCTOR_ID" --message "Developer update: implementation in progress ..."
+acd send "$CONDUCTOR_ID" --message "Developer update: implementation in progress ..."
 # repeat for tester/reviewer as milestones complete
 ```
 
-If a worker triggers a Claude Code confirmation menu, check the conductor inbox for a `[PROMPT]` message. Respond using the suggested command (for example `agent-conductor send "$DEV_ID" --message "1"`).
+If a worker triggers a Claude Code confirmation menu, check the conductor inbox for a `[PROMPT]` message. Respond using the suggested command (for example `acd send "$DEV_ID" --message "1"`).
 
-## 7. Verify filesystem and runtime results
+## 6. Verify filesystem and runtime results
 
 All work happens in `test-workspace/`:
 
 ```bash
 ls test-workspace
 cat test-workspace/add.js
-agent-conductor output "$DEV_ID" --mode last
-agent-conductor output "$TEST_ID" --mode last
-agent-conductor output "$REVIEW_ID" --mode last
+acd output "$DEV_ID" --mode last
+acd output "$TEST_ID" --mode last
+acd output "$REVIEW_ID" --mode last
 ```
 
 Confirm:
@@ -119,62 +99,40 @@ Confirm:
 - Reviewer summarizes findings and either approves or calls out issues.
 - Conductor aggregates the status when everyone reports back.
 
-## 8. Cleanup
+## 7. Exercise the approval workflow (optional)
 
 ```bash
-agent-conductor close "$DEV_ID"
-agent-conductor close "$TEST_ID"
-agent-conductor close "$REVIEW_ID"
-agent-conductor close "$CONDUCTOR_ID"
-```
-
-If any tmux pane was manually closed, the API logs a warning but still removes the database entry.
-
-```bash
-WORKER_JSON=$(agent-conductor worker "$SESSION_NAME" \
-  --provider claude_code \
-  --agent-profile tester)
-echo "$WORKER_JSON"
-WORKER_ID=$(echo "$WORKER_JSON" | jq -r '.id')
-
-agent-conductor send "$WORKER_ID" \
-  --message "Run node add.js and confirm it prints 5."
-
-agent-conductor output "$WORKER_ID" --mode last
-```
-
-The worker terminal should report the same result and remain available for further tasks.
-
-## 6. Exercise the approval workflow
-
-```bash
-agent-conductor send "$WORKER_ID" \
+WORKER_ID="$DEV_ID"  # choose any worker terminal
+acd send "$WORKER_ID" \
   --message "rm -rf *" \
   --require-approval \
-  --supervisor "$SUPERVISOR_ID" \
+  --supervisor "$CONDUCTOR_ID" \
   --metadata "safety-check"
 
-agent-conductor approvals --status PENDING
+acd approvals --status PENDING
 ```
 
 Approve (or deny) the request:
 
 ```bash
-REQUEST_ID=$(agent-conductor approvals --status PENDING | jq -r '.[0].id')
-agent-conductor approve "$REQUEST_ID"
+REQUEST_ID=$(acd approvals --status PENDING | jq -r '.[0].id')
+acd approve "$REQUEST_ID"
 # or
-# agent-conductor deny "$REQUEST_ID" --reason "Dangerous command"
+# acd deny "$REQUEST_ID" --reason "Dangerous command"
 ```
 
 Audit entries are appended to `~/.conductor/approvals/audit.log`, and approval/denial notifications appear in the corresponding terminal logs.
 
-## 7. Clean up (optional)
+## 8. Cleanup
 
 ```bash
-agent-conductor close "$WORKER_ID"
-agent-conductor close "$SUPERVISOR_ID"
-rm -rf /tmp/agent-conductor-demo
+acd close "$DEV_ID"
+acd close "$TEST_ID"
+acd close "$REVIEW_ID"
+acd close "$CONDUCTOR_ID"
 ```
+
+If any tmux pane was manually closed, the API logs a warning but still removes the database entry.
 
 ---
 
@@ -186,4 +144,4 @@ This sequence validates:
 - Inbox messaging between supervisor and worker
 - Approval request creation, listing, approval/denial, and audit logging
 
-Automated agents can lift these commands verbatim; swap provider/profile names if your environment differs.***
+Automated agents can lift these commands verbatim; swap provider/profile names if your environment differs.

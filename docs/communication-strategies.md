@@ -1,5 +1,7 @@
 # Communication Strategies
 
+> **CLI Alias:** `acd` is a short alias for `agent-conductor`. Both commands are interchangeable in examples below.
+
 Agent Conductor supports two complementary patterns for keeping supervisors and workers in sync. This guide explains both approaches so you can choose the right one for your automation level today and plan the migration path toward fully automated messaging.
 
 ## 1. CLI Relay (current default)
@@ -10,7 +12,7 @@ Each terminal runs the `agent-conductor` CLI via `uv`. Messages are routed by ca
 - Supervisor (Conductor persona) prepares instructions and tells the operator which worker should receive them.
 - Operator or worker runs:
   ```bash
-  agent-conductor send <terminal-id> --message "..." [--require-approval ...]
+  acd send <terminal-id> --message "..." [--require-approval ...]
   ```
 - Messages are injected immediately into the target tmux window.
 - Workers reply using the same command, so the supervisor receives confirmations or status updates.
@@ -23,7 +25,7 @@ Each terminal runs the `agent-conductor` CLI via `uv`. Messages are routed by ca
 **Limitations**
 - Requires knowing terminal IDs (the conductor persona calls this out so command snippets are easy to copy).
 - Humans or scripts must orchestrate the CLI calls; messages can interleave if a terminal is mid-response.
-- Interactive prompts (e.g., Claude Code requesting numbered choices) are forwarded to the supervisor inbox as `[PROMPT]` messages; you still need to send the final response via `agent-conductor send <worker-id> --message "<choice>"`.
+- Interactive prompts (e.g., Claude Code requesting numbered choices) are forwarded to the supervisor inbox as `[PROMPT]` messages; you still need to send the final response via `acd send <worker-id> --message "<choice>"`.
 
 ## 2. Inbox Queue (background delivery)
 
@@ -57,11 +59,11 @@ The inbox service lets agents persist messages to SQLite and have a background l
 Supervisors (Conductor persona) currently rely on the operator to launch specialist terminals. When the conductor requests a role, run:
 
 ```bash
-agent-conductor worker <session-name> --provider <provider-key> --agent-profile developer
-agent-conductor worker <session-name> --provider <provider-key> --agent-profile tester
-agent-conductor worker <session-name> --provider <provider-key> --agent-profile reviewer
+acd worker <session-name> --provider <provider-key> --agent-profile developer
+acd worker <session-name> --provider <provider-key> --agent-profile tester
+acd worker <session-name> --provider <provider-key> --agent-profile reviewer
 ```
 
-Once a worker exists, the conductor references it by window name (`worker-developer`, etc.) and continues coordination through the chosen communication strategy. Future enhancements may expose worker launch as a callable tool so the conductor can request it programmatically.
+Once a worker exists, the conductor references it by window name (for example `worker-developer-claude_code`; format: `<role>-<agent_profile>-<provider>`) and continues coordination through the chosen communication strategy. Future enhancements may expose worker launch as a callable tool so the conductor can request it programmatically.
 
 Regardless of the approach, keep the conductor persona updated so it knows whether to request CLI commands or rely on inbox delivery. This ensures every session shares the same mental model for delegation, acknowledgments, and status checks.

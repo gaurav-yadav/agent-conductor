@@ -2,7 +2,7 @@
 # Agent Conductor Integration Test
 set -e
 
-cd /Users/gaurav/exp/agent-conductor/test-workspace
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "=== Agent Conductor Integration Test ==="
 echo "Testing the basic functionality of Agent Conductor"
@@ -66,5 +66,5 @@ EOF
 cat test-results.txt
 echo ""
 echo "=== Test Complete ==="
-echo "All files created in: /Users/gaurav/exp/agent-conductor/test-workspace/"
+echo "All files created in: $(pwd)/"
 ls -la

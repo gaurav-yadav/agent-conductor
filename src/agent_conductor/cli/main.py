@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
 from typing import Any, Dict, List, Optional
 
 import click
@@ -40,6 +42,16 @@ def init() -> None:
 
 
 @cli.command()
+def health() -> None:
+    """Check server health."""
+    try:
+        result = _request("GET", "/health")
+        click.echo(f"Server: {result.get('status', 'unknown')}")
+    except Exception as e:
+        click.echo(f"Server: offline ({e})")
+
+
+@cli.command()
 @click.argument("source")
 @click.option("--name", help="Override the stored filename (defaults to source name).")
 @click.option(
@@ -63,8 +75,10 @@ def install(source: str, name: Optional[str], scope: str, force: bool) -> None:
 
 @cli.command()
 @click.option(
+    "-p",
     "--provider",
-    required=True,
+    default="claude_code",
+    show_default=True,
     help="Provider key (e.g., claude_code, codex, q_cli).",
 )
 @click.option("--agent-profile", help="Agent profile name used for the terminal.")
@@ -75,16 +89,30 @@ def install(source: str, name: Optional[str], scope: str, force: bool) -> None:
     multiple=True,
     help="Agent profile(s) to spawn as workers immediately after launch.",
 )
-def launch(provider: str, agent_profile: Optional[str], role: str, with_workers: List[str]) -> None:
+@click.option(
+    "--working-dir",
+    "working_directory",
+    default=None,
+    help="Working directory for the agent (defaults to current directory).",
+)
+def launch(
+    provider: str,
+    agent_profile: Optional[str],
+    role: str,
+    with_workers: List[str],
+    working_directory: Optional[str],
+) -> None:
     """Launch a new session with a supervisor terminal."""
+    cwd = working_directory or os.getcwd()
     payload = {
         "provider": provider,
         "agent_profile": agent_profile,
         "role": role,
+        "working_directory": cwd,
     }
     if with_workers:
         payload["workers"] = [
-            {"provider": provider, "role": "worker", "agent_profile": profile}
+            {"provider": provider, "role": "worker", "agent_profile": profile, "working_directory": cwd}
             for profile in with_workers
         ]
     result = _request("POST", "/sessions", payload)
@@ -99,21 +127,84 @@ def list_sessions() -> None:
     click.echo(json.dumps(result, indent=2))
 
 
+@cli.command("session")
+@click.argument("session_name")
+def get_session(session_name: str) -> None:
+    """Get details for a specific session."""
+    result = _request("GET", "/sessions")
+    for s in result:
+        if s["name"] == session_name:
+            click.echo(f"Session: {s['name']}")
+            terminals = s.get("terminals", [])
+            if terminals:
+                sup = terminals[0]
+                click.echo(f"Supervisor: {sup['id'][:8]} ({sup.get('status', 'unknown')})")
+                if len(terminals) > 1:
+                    click.echo("Workers:")
+                    for t in terminals[1:]:
+                        click.echo(f"  - {t['id'][:8]} ({t.get('agent_profile', 'unknown')}, {t.get('status', 'unknown')})")
+            return
+    raise click.ClickException(f"Session '{session_name}' not found")
+
+
+@cli.command()
+@click.argument("terminal_id")
+def status(terminal_id: str) -> None:
+    """Get quick status of a terminal."""
+    result = _request("GET", f"/terminals/{terminal_id}")
+    profile = result.get("agent_profile", "unknown")
+    term_status = result.get("status", "unknown")
+    click.echo(f"{terminal_id[:8]}: {term_status} ({profile})")
+
+
+@cli.command()
+@click.argument("terminal_id")
+@click.option("-n", "--lines", default=50, help="Number of lines to show")
+@click.option("-f", "--follow", is_flag=True, help="Follow log output")
+def logs(terminal_id: str, lines: int, follow: bool) -> None:
+    """View terminal logs."""
+    import subprocess
+    from pathlib import Path
+    log_path = Path.home() / ".conductor" / "logs" / "terminal" / f"{terminal_id}.log"
+    if not log_path.exists():
+        raise click.ClickException(f"Log file not found: {log_path}")
+    if follow:
+        subprocess.run(["tail", "-f", str(log_path)])
+    else:
+        subprocess.run(["tail", "-n", str(lines), str(log_path)])
+
+
 @cli.command()
 @click.argument("session_name")
 @click.option(
+    "-p",
     "--provider",
-    required=True,
+    default="claude_code",
+    show_default=True,
     help="Provider key for the worker (e.g., claude_code, codex, q_cli).",
 )
 @click.option("--agent-profile", help="Agent profile for the worker.")
 @click.option("--role", default="worker", show_default=True, help="Role label.")
-def worker(session_name: str, provider: str, agent_profile: Optional[str], role: str) -> None:
+@click.option(
+    "--working-dir",
+    "working_directory",
+    default=None,
+    help="Working directory for the worker (defaults to current directory).",
+)
+def worker(
+    session_name: str,
+    provider: str,
+    agent_profile: Optional[str],
+    role: str,
+    working_directory: Optional[str],
+) -> None:
     """Spawn a worker terminal inside an existing session."""
+    cwd = working_directory or os.getcwd()
     payload = {
         "provider": provider,
         "agent_profile": agent_profile,
         "role": role,
+        "working_directory": cwd,
     }
     result = _request("POST", f"/sessions/{session_name}/terminals", payload)
     click.echo(json.dumps(result, indent=2))
@@ -159,6 +250,46 @@ def close(terminal_id: str) -> None:
     """Terminate a terminal."""
     _request("DELETE", f"/terminals/{terminal_id}")
     click.echo("Terminal deleted.")
+
+
+@cli.command()
+@click.argument("target")
+def attach(target: str) -> None:
+    """Attach to a tmux session. TARGET can be session name or terminal ID."""
+    import subprocess
+
+    session_name = target
+
+    # If target looks like a short ID (8 chars, hex), try to resolve to session name
+    if len(target) <= 8:
+        try:
+            result = _request("GET", f"/terminals/{target}")
+            session_name = result.get("session_name", target)
+        except (click.ClickException, httpx.ConnectError, httpx.TimeoutException):
+            # API unavailable or terminal not found - use target as-is
+            session_name = target
+
+    # Attempt direct tmux attach (works even when API is down)
+    result = subprocess.run(
+        ["tmux", "attach-session", "-t", session_name],
+        capture_output=False,
+    )
+    if result.returncode != 0:
+        raise click.ClickException(
+            f"Failed to attach to tmux session '{session_name}'. "
+            "Verify the session exists with 'tmux list-sessions'."
+        )
+
+
+@cli.command()
+@click.argument("session_name")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation")
+def kill(session_name: str, force: bool) -> None:
+    """Kill an entire session and all its terminals."""
+    if not force:
+        click.confirm(f"Kill session '{session_name}' and all terminals?", abort=True)
+    _request("DELETE", f"/sessions/{session_name}")
+    click.echo(f"Session '{session_name}' killed.")
 
 
 @cli.command("send-message")
@@ -275,6 +406,200 @@ def disable_flow(name: str) -> None:
 def remove_flow(name: str) -> None:
     _request("DELETE", f"/flows/{name}")
     click.echo("Flow removed.")
+
+
+# ============================================================================
+# COMMAND ALIASES - Short versions of common commands
+# ============================================================================
+
+
+@cli.command("ls")
+def ls_alias() -> None:
+    """Alias for 'sessions' - list active sessions."""
+    list_sessions()
+
+
+@cli.command("out")
+@click.argument("terminal_id")
+@click.option("--mode", type=click.Choice(["full", "last"]), default="full", show_default=True)
+def out_alias(terminal_id: str, mode: str) -> None:
+    """Alias for 'output' - fetch terminal output."""
+    output.callback(terminal_id, mode)
+
+
+@cli.command("s")
+@click.argument("terminal_id")
+@click.option("--message", "-m", prompt=True, help="Message to send.")
+@click.option("--require-approval/--no-require-approval", default=False)
+@click.option("--supervisor", help="Supervisor terminal ID.")
+@click.option("--metadata", help="Metadata payload.")
+def s_alias(terminal_id: str, message: str, require_approval: bool, supervisor: Optional[str], metadata: Optional[str]) -> None:
+    """Alias for 'send' - send input to terminal."""
+    send.callback(terminal_id, message, require_approval, supervisor, metadata)
+
+
+@cli.command("a")
+@click.argument("target")
+def a_alias(target: str) -> None:
+    """Alias for 'attach' - attach to tmux session."""
+    attach.callback(target)
+
+
+@cli.command("rm")
+@click.argument("terminal_id")
+def rm_alias(terminal_id: str) -> None:
+    """Alias for 'close' - terminate a terminal."""
+    close.callback(terminal_id)
+
+
+@cli.command("k")
+@click.argument("session_name")
+@click.option("--force", "-f", is_flag=True)
+def k_alias(session_name: str, force: bool) -> None:
+    """Alias for 'kill' - kill entire session."""
+    kill.callback(session_name, force)
+
+
+# ============================================================================
+# PERSONA MANAGEMENT COMMANDS
+# ============================================================================
+
+
+@cli.group()
+def persona() -> None:
+    """Persona management commands."""
+
+
+@persona.command("show")
+@click.argument("name")
+def persona_show(name: str) -> None:
+    """Show the full content of a persona file."""
+    from importlib import resources
+    from pathlib import Path
+
+    from agent_conductor import constants
+
+    # Check project-scoped first (takes precedence), then user-global, then bundled
+    project_path = Path.cwd() / ".conductor" / "agent-context" / f"{name}.md"
+    user_path = constants.AGENT_CONTEXT_DIR / f"{name}.md"
+
+    if project_path.exists():
+        click.echo(project_path.read_text())
+    elif user_path.exists():
+        click.echo(user_path.read_text())
+    else:
+        try:
+            bundled_file = resources.files("agent_conductor.agent_store") / f"{name}.md"
+        except FileNotFoundError:
+            bundled_file = None
+        if bundled_file and bundled_file.is_file():
+            click.echo(bundled_file.read_text())
+        else:
+            raise click.ClickException(f"Persona '{name}' not found")
+
+
+@persona.command("edit")
+@click.argument("name")
+def persona_edit(name: str) -> None:
+    """Open a persona file in $EDITOR."""
+    import subprocess
+    from importlib import resources
+    from pathlib import Path
+
+    from agent_conductor import constants
+
+    # Check project-scoped first (takes precedence), then user-global, then bundled
+    project_path = Path.cwd() / ".conductor" / "agent-context" / f"{name}.md"
+    user_path = constants.AGENT_CONTEXT_DIR / f"{name}.md"
+
+    if project_path.exists():
+        target = project_path
+    elif user_path.exists():
+        target = user_path
+    else:
+        try:
+            bundled_file = resources.files("agent_conductor.agent_store") / f"{name}.md"
+        except FileNotFoundError:
+            bundled_file = None
+        if bundled_file and bundled_file.is_file():
+            # Copy bundled to user dir for editing.
+            user_path.parent.mkdir(parents=True, exist_ok=True)
+            user_path.write_text(bundled_file.read_text())
+            target = user_path
+            click.echo(f"Copied bundled persona to {user_path} for editing")
+        else:
+            raise click.ClickException(f"Persona '{name}' not found")
+
+    editor = os.environ.get("EDITOR", "vim")
+    subprocess.run([*shlex.split(editor), str(target)])
+
+
+@persona.command("create")
+@click.argument("name")
+def persona_create(name: str) -> None:
+    """Create a new persona from template."""
+    import subprocess
+
+    from agent_conductor import constants
+
+    user_path = constants.AGENT_CONTEXT_DIR / f"{name}.md"
+
+    if user_path.exists():
+        raise click.ClickException(f"Persona '{name}' already exists at {user_path}")
+
+    user_path.parent.mkdir(parents=True, exist_ok=True)
+
+    template = f"""---
+name: {name}
+description: Description of {name} agent
+default_provider: claude_code
+tools: []
+mcpServers: {{}}
+---
+
+# {name.title()} Agent
+
+System prompt for the {name} agent goes here.
+
+## Responsibilities
+
+- Task 1
+- Task 2
+
+## Guidelines
+
+Add any specific guidelines for this agent.
+"""
+    user_path.write_text(template)
+    click.echo(f"Created persona at {user_path}")
+
+    editor = os.environ.get("EDITOR", "vim")
+    subprocess.run([*shlex.split(editor), str(user_path)])
+
+
+@persona.command("list")
+@click.option("--bundled/--no-bundled", default=True)
+@click.option("--installed/--no-installed", default=True)
+def persona_list(bundled: bool, installed: bool) -> None:
+    """List available personas in table format."""
+    from agent_conductor.cli.formatters import table
+
+    catalog = agent_profiles.get_persona_catalog(
+        include_bundled=bundled, include_installed=installed
+    )
+
+    rows = []
+    for source, profiles in catalog.items():
+        for p in profiles:
+            name = p.get("name", "unknown")
+            provider = p.get("default_provider", "claude_code")
+            desc = p.get("description", "")[:40]
+            rows.append([name, provider, source, desc])
+
+    if rows:
+        click.echo(table(["NAME", "PROVIDER", "SOURCE", "DESCRIPTION"], rows))
+    else:
+        click.echo("No personas found")
 
 
 if __name__ == "__main__":

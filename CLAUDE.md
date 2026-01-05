@@ -8,12 +8,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Core architecture: FastAPI REST server manages tmux sessions, SQLite persistence stores metadata, and CLI tools communicate via HTTP.
 
+> **CLI Alias:** `acd` is a short alias for `agent-conductor`. Both commands are interchangeable throughout this documentation.
+
 ## Development Commands
 
 ### Environment Setup
 ```bash
 # Initialize local directories and SQLite schema
-agent-conductor init
+# Note: 'acd' is a short alias for 'agent-conductor'
+acd init
 
 # Install dependencies
 uv sync
@@ -24,34 +27,71 @@ uv sync
 # Start the FastAPI server (required for CLI to function)
 uv run uvicorn agent_conductor.api.main:app --reload
 
-# Launch a new supervisor session (in another terminal)
-agent-conductor launch --provider claude_code --agent-profile supervisor
+# Launch a new supervisor session (provider defaults to claude_code)
+# Note: Use 'acd' as a short alias for 'agent-conductor'
+acd launch --agent-profile conductor
+acd launch -p codex --agent-profile conductor  # or specify provider
 
-# Spawn a worker in an existing session
-agent-conductor worker <session-name> --provider claude_code --agent-profile tester
+# Spawn workers (provider defaults to claude_code)
+acd worker <session-name> --agent-profile tester
+acd worker <session-name> --agent-profile developer
 
-# List all active sessions
-agent-conductor sessions
+# List sessions and inspect
+acd sessions          # or: acd ls
+acd session <name>    # detailed view of single session
 
-# Send a command to a terminal
-agent-conductor send <terminal-id> --message "echo hello"
+# Quick status and health
+acd health            # check if server is running
+acd status <id>       # quick terminal status
 
-# Get terminal output
-agent-conductor output <terminal-id> --mode last
+# Send commands
+acd send <id> --message "echo hello"    # or: acd s <id> -m "..."
 
-# Send a command requiring approval
-agent-conductor send <terminal-id> --message "rm -rf temp" --require-approval --supervisor <supervisor-id>
+# Get output
+acd output <id> --mode last    # or: acd out <id>
 
-# List pending approvals
-agent-conductor approvals --status PENDING
+# View logs
+acd logs <id>         # last 50 lines
+acd logs <id> -f      # follow (tail -f)
+acd logs <id> -n 100  # last 100 lines
 
-# Approve or deny a request
-agent-conductor approve <request-id>
-agent-conductor deny <request-id> --reason "Too dangerous"
+# Attach to tmux session
+acd attach <session-or-id>    # or: acd a <target>
+
+# Kill session or close terminal
+acd kill <session> -f    # or: acd k <session> -f
+acd close <id>           # or: acd rm <id>
+
+# Approval workflow
+acd send <id> --message "rm -rf temp" --require-approval --supervisor <supervisor-id>
+acd approvals --status PENDING
+acd approve <request-id>
+acd deny <request-id> --reason "Too dangerous"
+
+# Persona management
+acd persona list      # table view
+acd persona show <name>
+acd persona edit <name>
+acd persona create <name>
 
 # Open the dashboard (optional)
-open http://127.0.0.1:9889/dashboard  # use xdg-open/start depending on OS
+open http://127.0.0.1:9889/dashboard
 ```
+
+### Command Aliases (for productivity)
+
+> **Note:** `acd` is a short alias for `agent-conductor`. Use whichever you prefer.
+
+| Full Command | Alias | Description |
+|-------------|-------|-------------|
+| `sessions` | `ls` | List sessions |
+| `output` | `out` | Get terminal output |
+| `send` | `s` | Send message to terminal |
+| `attach` | `a` | Attach to tmux session |
+| `close` | `rm` | Terminate terminal |
+| `kill` | `k` | Kill entire session |
+
+Example: `acd ls` is equivalent to `agent-conductor sessions`.
 
 ### Testing & Quality
 ```bash
@@ -90,9 +130,8 @@ The codebase follows strict separation of concerns:
 ### Inbox Messaging System
 Workers and supervisors communicate asynchronously via an SQLite-backed inbox:
 1. Message is queued with `PENDING` status
-2. Background loop monitors terminal logs for idle prompts
-3. When terminal is idle, message is injected via tmux `send-keys`
-4. Status updates to `DELIVERED` or `FAILED`
+2. Background loop wakes every few seconds and injects pending messages immediately via tmux `send-keys` (no idle detection yet)
+3. Status updates to `DELIVERED` or `FAILED`
 
 ### Approval Workflow
 Commands requiring approval follow this flow:
@@ -108,7 +147,7 @@ All providers must implement `BaseProvider` (`providers/base.py`):
 - `initialize()`: Launch the CLI tool in tmux
 - `send_input(message)`: Send keystrokes to the process
 - `get_status()`: Return terminal state (READY, RUNNING, COMPLETED, ERROR)
-- `extract_last_message_from_script(history)`: Parse tmux output for final response
+- `extract_last_message_from_history(history)`: Parse tmux output for final response
 - `cleanup()`: Terminate process and release resources
 
 When adding a new provider:
@@ -127,7 +166,7 @@ SQLite at `~/.conductor/db/conductor.db` contains:
 ### Background Tasks
 The API server runs three autonomous routines:
 1. **Cleanup Service**: Purges stale sessions/logs based on retention policy
-2. **Inbox Loop**: Polls terminal logs and delivers pending messages when idle
+2. **Inbox Loop**: Polls for receivers with pending messages and delivers immediately (idle-aware delivery is a future improvement)
 3. **Flow Daemon**: (Planned) Evaluates scheduled flows via cron expressions
 
 ### Configuration Paths
@@ -208,30 +247,31 @@ The CLI is exclusively an HTTP client—it never manipulates tmux or the databas
 **Manual smoke test** (see `docs/test-plan.md` for complete workflow):
 ```bash
 # 1. Initialize and start server
-agent-conductor init
+# Note: 'acd' is a short alias for 'agent-conductor'
+acd init
 uv run uvicorn agent_conductor.api.main:app --reload
 
 # 2. Launch supervisor and capture IDs
-SUPERVISOR_JSON=$(agent-conductor launch --provider claude_code --agent-profile supervisor)
+SUPERVISOR_JSON=$(acd launch --provider claude_code --agent-profile conductor)
 SUPERVISOR_ID=$(echo "$SUPERVISOR_JSON" | jq -r '.id')
 SESSION_NAME=$(echo "$SUPERVISOR_JSON" | jq -r '.session_name')
 
 # 3. Send a task to supervisor
-agent-conductor send "$SUPERVISOR_ID" \
+acd send "$SUPERVISOR_ID" \
   --message "Create a file add.js with: function add(a,b){return a+b;} console.log(add(2,3));"
 
 # 4. Check output
-agent-conductor output "$SUPERVISOR_ID" --mode last
+acd output "$SUPERVISOR_ID" --mode last
 
 # 5. Spawn a worker
-WORKER_JSON=$(agent-conductor worker "$SESSION_NAME" --provider claude_code --agent-profile tester)
+WORKER_JSON=$(acd worker "$SESSION_NAME" --provider claude_code --agent-profile tester)
 WORKER_ID=$(echo "$WORKER_JSON" | jq -r '.id')
 
 # 6. Test approval workflow
-agent-conductor send "$WORKER_ID" \
+acd send "$WORKER_ID" \
   --message "rm -rf *" --require-approval --supervisor "$SUPERVISOR_ID"
-agent-conductor approvals --status PENDING
-agent-conductor approve <request-id>
+acd approvals --status PENDING
+acd approve <request-id>
 ```
 
 When adding automated tests:
@@ -257,6 +297,12 @@ When adding automated tests:
 ### "CLI cannot connect to server"
 Ensure FastAPI server is running: `uv run uvicorn agent_conductor.api.main:app --reload`
 
+### Environment Variable Issues
+If agents report missing `CONDUCTOR_TERMINAL_ID`:
+- Agent is running outside Conductor context
+- Relaunch via `acd launch` command
+- Verify tmux environment was properly set during session creation
+
 ### "tmux session already exists"
 Session name collision—delete existing session or choose new name
 
@@ -271,12 +317,6 @@ Verify:
 1. Idle prompt regex patterns match provider output
 2. Supervisor terminal is not constantly streaming output
 3. Background inbox loop is running (check server logs)
-
-### Environment Variable Issues
-If agents report missing `CONDUCTOR_TERMINAL_ID`:
-- Agent is running outside Conductor context
-- Relaunch via `agent-conductor launch` command
-- Verify tmux environment was properly set during session creation
 
 ## Known Codebase Quirks
 

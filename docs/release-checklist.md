@@ -1,5 +1,7 @@
 # Release Checklist
 
+> **CLI Alias:** `acd` is a short alias for `agent-conductor`. Both commands are interchangeable.
+
 This guide captures the steps used to produce a tagged release (e.g. `v0.1.0-rc1`) and verify that the published artifacts install cleanly.
 
 ## Pre-flight
@@ -17,10 +19,10 @@ Verify that both `.tar.gz` and `.whl` contain the bundled persona profiles (`age
 
 ## Install verification
 ```bash
-# Wheel install
-uv tool run agent-conductor --help
-uv tool run agent-conductor init
-uv tool run agent-conductor personas --bundled --installed
+# Wheel install (both 'agent-conductor' and 'acd' alias work)
+uv tool run acd --help
+uv tool run acd init
+uv tool run acd personas --bundled --installed
 
 # Git install (mirrors public instructions)
 uv tool install --force-reinstall --upgrade \

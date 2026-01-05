@@ -1,5 +1,7 @@
 # Conductor Agent Profile Guide
 
+> **CLI Alias:** `acd` is a short alias for `agent-conductor`. Both commands are interchangeable in examples below.
+
 Agent profiles define how individual agents behave inside the Conductor orchestrator. Each profile is a Markdown file with YAML frontmatter that supplies metadata, tool permissions, and launch configuration. This guide explains every supported field, shows real-world examples, and outlines best practices so another engineer or AI agent can author profiles confidently.
 
 ## Table of Contents
@@ -36,16 +38,16 @@ Use the CLI to copy bundled personas or custom profiles into your local catalog:
 
 ```bash
 # Copy a bundled profile into your user context (~/.conductor/agent-context)
-agent-conductor install developer
+acd install developer
 
 # Install directly from a local file into the current repository
-agent-conductor install ./my-custom-agent.md --scope project
+acd install ./my-custom-agent.md --scope project
 
 # Inspect available personas
-agent-conductor personas
+acd personas
 ```
 
-Installed profiles keep their original frontmatter and become available to `conductor launch --agent-profile <name>` and `conductor worker` invocations.
+Installed profiles keep their original frontmatter and become available to `acd launch --agent-profile <name>` and `acd worker` invocations.
 
 Bundled profiles include:
 - `conductor` – Supervisor persona that coordinates specialists and enforces workflow guardrails.
@@ -228,8 +230,8 @@ When the rename lands, update references accordingly.
 
 ## Testing Profiles Locally
 
-1. Place the profile in `~/.conductor/agent-context/` (or use `agent-conductor install ./path/to/profile.md`).
-2. Launch a test session: `agent-conductor launch --provider claude_code --agent-profile <profile-name> --headless` (swap provider as needed).
+1. Place the profile in `~/.conductor/agent-context/` (or use `acd install ./path/to/profile.md`).
+2. Launch a test session: `acd launch --provider claude_code --agent-profile <profile-name> --headless` (swap provider as needed).
 3. Observe the terminal log under `~/.conductor/logs/terminal/<terminal_id>.log`.
 4. Verify MCP tools are available by running `help tools` (provider-specific) or invoking a simple `send_message`.
 5. Iterate on the Markdown prompt, relaunching or using flows to test automation scenarios.
@@ -244,8 +246,8 @@ Automated validation ideas:
 - Commit profiles to version control (for example, under `agent_store/`).
 - Use semantic filenames (`001_supervisor.md`) if you manage many variants.
 - Provide changelog entries when updating significant instructions.
-- For remote distribution, host profiles on HTTPS endpoints and reference them via `agent-conductor install https://...`.
-- Consider packaging bundles with the CLI using entry points so `agent-conductor install <name>` retrieves them automatically.
+- For remote distribution, host profiles on HTTPS endpoints and reference them via `acd install https://...`.
+- Consider packaging bundles with the CLI using entry points so `acd install <name>` retrieves them automatically.
 
 ## Troubleshooting
 
@@ -301,7 +303,7 @@ mcpServers:
 - [ ] MCP server definition references `conductor-mcp-server`.
 - [ ] Markdown body describes role, workflow, and communication style.
 - [ ] Commands and directories reference the current `conductor` naming.
-- [ ] Profile tested via `conductor launch --agents <name>`.
+- [ ] Profile tested via `acd launch --agent-profile <name>`.
 - [ ] Version stored in source control or shared location.
 
 With these guidelines, contributors can design sophisticated agent personas that integrate seamlessly with Conductor’s orchestration model.

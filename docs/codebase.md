@@ -1,5 +1,7 @@
 # Agent Conductor Codebase Reference
 
+> **CLI Alias:** `acd` is a short alias for `agent-conductor`. Both commands are interchangeable.
+
 This document gives a concise map of the repository so new contributors can orient quickly. It is split into a structural overview (where things live) and a logical overview (how data and control flow between layers).
 
 ---
@@ -44,7 +46,7 @@ pyproject.toml               # uv/PEP 621 project metadata & tooling config
 ## Logical Overview
 
 ### Control Plane Boot
-1. `agent-conductor init` → CLI ensures `~/.conductor` directories exist, initializes the SQLite schema.
+1. `acd init` → CLI ensures `~/.conductor` directories exist, initializes the SQLite schema.
 2. `uv run uvicorn agent_conductor.api.main:app` → FastAPI startup hook:
    - Calls `setup_logging()` and `ensure_runtime_directories()`.
    - Initializes SQLite engine, tmux provider manager, and all services.

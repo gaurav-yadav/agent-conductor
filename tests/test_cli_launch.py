@@ -64,7 +64,11 @@ def test_launch_with_workers(monkeypatch):
 
     assert result.exit_code == 0
     post_payload = calls[0][2]
-    assert post_payload["workers"] == [
-        {"provider": "claude_code", "role": "worker", "agent_profile": "developer"}
-    ]
+    # CLI now always sends working_directory for workers
+    assert len(post_payload["workers"]) == 1
+    worker = post_payload["workers"][0]
+    assert worker["provider"] == "claude_code"
+    assert worker["role"] == "worker"
+    assert worker["agent_profile"] == "developer"
+    assert "working_directory" in worker
     assert "worker-developer" in result.output

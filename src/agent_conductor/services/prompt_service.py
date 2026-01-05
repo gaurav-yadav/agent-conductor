@@ -60,7 +60,7 @@ class PromptWatcher:
         message = (
             f"[PROMPT] {worker.window_name} is awaiting input:\n"
             f"{prompt_text}\n"
-            f"Respond via: agent-conductor send {worker.id} --message \"<choice>\""
+            f"Respond via: acd send {worker.id} --message \"<choice>\""
         )
 
         try:

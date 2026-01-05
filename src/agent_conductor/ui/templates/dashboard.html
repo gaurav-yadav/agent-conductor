@@ -90,7 +90,7 @@
         </article>
       {% endfor %}
     {% else %}
-      <p>No active sessions. Use <code>agent-conductor launch</code> to start one.</p>
+      <p>No active sessions. Use <code>acd launch</code> (or <code>agent-conductor launch</code>) to start one.</p>
     {% endif %}
   </section>
 
@@ -101,9 +101,66 @@
       {% for message in messages %}
         {% if '[PROMPT]' in message.message %}
           {% set has_prompts = true %}
+          {% set lines = message.message.split('\n') %}
+          {% set response_hint = lines[-1] if lines else '' %}
+          {% set worker_id = None %}
+          {% if 'acd send ' in response_hint %}
+            {% set parts = response_hint.split('acd send ') %}
+            {% if parts|length > 1 %}
+              {% set tail = parts[1] %}
+              {% set worker_id = tail.split(' ')[0] %}
+            {% endif %}
+          {% elif 'agent-conductor send ' in response_hint %}
+            {% set parts = response_hint.split('agent-conductor send ') %}
+            {% if parts|length > 1 %}
+              {% set tail = parts[1] %}
+              {% set worker_id = tail.split(' ')[0] %}
+            {% endif %}
+          {% elif 'acd s ' in response_hint %}
+            {% set parts = response_hint.split('acd s ') %}
+            {% if parts|length > 1 %}
+              {% set tail = parts[1] %}
+              {% set worker_id = tail.split(' ')[0] %}
+            {% endif %}
+          {% elif 'agent-conductor s ' in response_hint %}
+            {% set parts = response_hint.split('agent-conductor s ') %}
+            {% if parts|length > 1 %}
+              {% set tail = parts[1] %}
+              {% set worker_id = tail.split(' ')[0] %}
+            {% endif %}
+          {% endif %}
           <div class="prompt">
-            <p><strong>{{ message.message.split('\n')[0] }}</strong></p>
-            <pre>{{ '\n'.join(message.message.split('\n')[1:]) }}</pre>
+            <p><strong>{{ lines[0] if lines else message.message }}</strong></p>
+            {% if lines|length > 1 %}
+              <pre>{{ '\n'.join(lines[1:]) }}</pre>
+            {% endif %}
+            {% if worker_id %}
+              <div class="row">
+                <div class="col">
+                  <input
+                    id="prompt-input-{{ message.id }}"
+                    type="text"
+                    placeholder="Type response (e.g., 1, yes)"
+                    onkeydown="promptKeydown(event, '{{ worker_id }}', 'prompt-input-{{ message.id }}')"
+                  />
+                </div>
+                <div class="col">
+                  <button
+                    class="button primary"
+                    onclick="sendPrompt('{{ worker_id }}', 'prompt-input-{{ message.id }}')"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+              <p class="text-secondary" style="margin-top: 0.5rem;">
+                Target worker terminal: <code>{{ worker_id }}</code>
+              </p>
+            {% else %}
+              <p class="text-secondary">
+                Unable to determine the worker terminal ID; respond from the supervisor terminal.
+              </p>
+            {% endif %}
           </div>
         {% endif %}
       {% endfor %}
@@ -154,6 +211,44 @@
       if (!confirm(`Close terminal ${terminalId}?`)) return;
       await fetch(`/terminals/${terminalId}`, { method: 'DELETE' });
       refreshDashboard();
+    }
+
+    async function sendPrompt(workerId, inputId) {
+      const input = document.getElementById(inputId);
+      if (!input) {
+        alert('Unable to locate prompt input field.');
+        return;
+      }
+      const message = input.value.trim();
+      if (!message) {
+        alert('Enter a response before sending.');
+        return;
+      }
+      const response = await fetch(`/terminals/${workerId}/input`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      });
+      if (!response.ok) {
+        let detail = await response.text();
+        try {
+          const parsed = JSON.parse(detail);
+          detail = parsed.detail || detail;
+        } catch (err) {
+          // response was not JSON; keep raw text
+        }
+        alert(`Failed to send response: ${detail}`);
+        return;
+      }
+      input.value = '';
+      refreshDashboard();
+    }
+
+    function promptKeydown(event, workerId, inputId) {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendPrompt(workerId, inputId);
+      }
     }
 
     async function approve(id) {

@@ -1,5 +1,7 @@
 # CLI Agent Conductor Architecture Overview
 
+> **CLI Alias:** Throughout this document, `agent-conductor` can be substituted with `acd` for brevity. Both commands are equivalent.
+
 This document provides a comprehensive blueprint for designing, deploying, and operating Agent Conductor—a tmux-based orchestrator for multi-agent command-line workflows. The intent is to equip another AI or human engineer with enough detail to rebuild the system from scratch without additional context. All module references align with the `src/agent_conductor` package; see also `docs/architecture-diagrams.md` for complementary Mermaid visuals.
 
 ## Table of Contents
@@ -75,7 +77,7 @@ This document focuses on the system-level architecture rather than individual pr
 - **Assign**: MCP pattern where the supervisor delegates a task and resumes immediately while the worker reports back asynchronously.
 - **CONDUCTOR_TERMINAL_ID**: Environment variable set inside each tmux pane; every terminal window reads this value to discover its logical identifier.
 - **Cleanup Service**: Background job that deletes stale sessions, messages, and logs according to retention policy.
-- **agent-conductor CLI**: User-facing executable that translates commands into REST requests.
+- **agent-conductor CLI** (alias: `acd`): User-facing executable that translates commands into REST requests.
 - **Flow**: Persisted automation definition (name, schedule, agent profile, optional script). Scheduling logic is not yet active.
 - **Flow Scheduler (planned)**: Future background coroutine that will evaluate flow schedules and trigger runs.
 - **Inbox**: Lightweight message queue persisted in SQLite. A background loop injects messages directly into tmux panes on a fixed cadence.
@@ -177,7 +179,8 @@ Each command assembles the appropriate REST call and surfaces user-facing errors
 
 ```bash
 # Example: Launch a supervisor plus common specialists
-agent-conductor launch --provider claude_code --agent-profile conductor \
+# Note: 'acd' is a short alias for 'agent-conductor'
+acd launch --provider claude_code --agent-profile conductor \
   --with-worker developer --with-worker tester --with-worker reviewer
 ```
 
@@ -416,22 +419,24 @@ Updating `constants.py` and the setup scripts is required to fully adopt the new
 
 ## CLI Command Reference
 
+> **Shorthand:** `acd` is available as an alias for `agent-conductor`. For example, `acd launch` is equivalent to `agent-conductor launch`.
+
 | Command | Purpose |
 | --- | --- |
-| `agent-conductor init` | Create runtime directories and initialize the SQLite database. |
-| `agent-conductor install <source>` | Install bundled or local agent profiles. |
-| `agent-conductor launch --provider <key> --agent-profile <profile> [--with-worker ...]` | Start a supervisor terminal (optionally bootstrapping workers). |
-| `agent-conductor worker <session> --provider <key> --agent-profile <profile>` | Add a worker terminal to an existing session. |
-| `agent-conductor sessions` | List active sessions and their terminals. |
-| `agent-conductor send <terminal-id> --message "..."` | Inject input into a terminal (with optional approval gating). |
-| `agent-conductor output <terminal-id> [--mode last]` | Retrieve tmux output. |
-| `agent-conductor close <terminal-id>` | Terminate a terminal and clean up resources. |
-| `agent-conductor send-message --sender <id> --receiver <id> --message "..."` | Queue an inbox message manually. |
-| `agent-conductor inbox <terminal-id>` | Inspect messages queued for a terminal. |
-| `agent-conductor flow register/list/enable/disable/remove` | Manage persisted flow definitions. |
-| `agent-conductor approvals` | List pending approvals. |
-| `agent-conductor approve <approval-id>` / `deny <approval-id>` | Resolve approval requests. |
-| `agent-conductor personas` | List bundled and installed personas. |
+| `acd init` | Create runtime directories and initialize the SQLite database. |
+| `acd install <source>` | Install bundled or local agent profiles. |
+| `acd launch --provider <key> --agent-profile <profile> [--with-worker ...]` | Start a supervisor terminal (optionally bootstrapping workers). |
+| `acd worker <session> --provider <key> --agent-profile <profile>` | Add a worker terminal to an existing session. |
+| `acd sessions` | List active sessions and their terminals. |
+| `acd send <terminal-id> --message "..."` | Inject input into a terminal (with optional approval gating). |
+| `acd output <terminal-id> [--mode last]` | Retrieve tmux output. |
+| `acd close <terminal-id>` | Terminate a terminal and clean up resources. |
+| `acd send-message --sender <id> --receiver <id> --message "..."` | Queue an inbox message manually. |
+| `acd inbox <terminal-id>` | Inspect messages queued for a terminal. |
+| `acd flow register/list/enable/disable/remove` | Manage persisted flow definitions. |
+| `acd approvals` | List pending approvals. |
+| `acd approve <approval-id>` / `deny <approval-id>` | Resolve approval requests. |
+| `acd personas` | List bundled and installed personas. |
 
 Each command surfaces Click errors for misconfiguration and prints actionable follow-up steps (for example, the session summary after `launch`).
 
@@ -580,14 +585,16 @@ Ensure tmux is installed and accessible. For production-like environments, super
 
 ## Operational Playbook
 
+> **Note:** `acd` is a short alias for `agent-conductor`.
+
 - **Start the server**: `uv run python -m uvicorn agent_conductor.api.main:app --host 127.0.0.1 --port 9889`.
 - **Validate health**: `curl http://127.0.0.1:9889/health`.
-- **Launch agents**: `agent-conductor launch --provider claude_code --agent-profile conductor` (add `--with-worker ...` as needed).
+- **Launch agents**: `acd launch --provider claude_code --agent-profile conductor` (add `--with-worker ...` as needed).
 - **List sessions**: `curl http://127.0.0.1:9889/sessions`.
 - **Terminate session**: `curl -X DELETE http://127.0.0.1:9889/sessions/<session_name>`.
 - **Collect logs**: Inspect `~/.conductor/logs/terminal/<terminal_id>.log`.
 - **Backup data**: Copy the SQLite database and log directories regularly.
-- **Upgrade providers**: Use the `install` command or rerun provider-specific installers; ensure compatibility with Conductor's provider interface.
+- **Upgrade providers**: Use the `acd install` command or rerun provider-specific installers; ensure compatibility with Conductor's provider interface.
 - **Shutdown**: Detach from tmux, stop the FastAPI server, verify no tmux sessions remain using `tmux ls`.
 
 ## Testing and Quality Assurance
@@ -609,7 +616,7 @@ Common issues:
 - **Provider initialization fails**: Check provider logs in the terminal log file for API key errors or missing binaries.
 - **Inbox messages never arrive**: Ensure the inbox background task is running (check server logs) and that the receiver terminal ID is correct; review terminal logs for injected `[INBOX:...]` lines.
 - **Flows do not trigger**: Verify the cron expression, ensure the script returns valid JSON, and inspect server logs for scheduling errors.
-- **Environment variable missing**: If `CONDUCTOR_TERMINAL_ID` is absent, the agent is running outside Conductor; relaunch via the orchestrator.
+- **Environment variable missing**: If `CONDUCTOR_TERMINAL_ID` is absent, the agent is running outside Conductor; relaunch via `acd launch`.
 
 Systematic debugging approach:
 1. Inspect FastAPI logs for stack traces.
@@ -651,7 +658,7 @@ class BaseProvider(ABC):
         """Return enum describing READY, RUNNING, COMPLETED, ERROR."""
 
     @abstractmethod
-    def extract_last_message_from_script(self, history: str) -> str:
+    def extract_last_message_from_history(self, history: str) -> str:
         """Parse tmux history to isolate the provider's final response."""
 
     @abstractmethod
@@ -689,10 +696,10 @@ Profiles are installed under `~/.conductor/agent-context/` and referenced by nam
 A typical supervisor session:
 
 ```
-Session: conductor-9483
-  Window 1: supervisor-code_supervisor  (CONDUCTOR_TERMINAL_ID=abc123)
-  Window 2: worker-docs_writer          (CONDUCTOR_TERMINAL_ID=def456)
-  Window 3: worker-tester               (CONDUCTOR_TERMINAL_ID=ghi789)
+Session: conductor-9483a1b2
+  Window 1: supervisor-code_supervisor-claude_code  (CONDUCTOR_TERMINAL_ID=a1b2c3d4)
+  Window 2: worker-docs_writer-claude_code          (CONDUCTOR_TERMINAL_ID=e5f6a7b8)
+  Window 3: worker-tester-claude_code               (CONDUCTOR_TERMINAL_ID=9abc0def)
 ```
 
 Windows inherit deterministic names from agent profiles. Additional panes can be created manually, but Conductor-managed panes maintain the environment variables required for orchestration.
@@ -713,10 +720,10 @@ For hacking on docs like this one, install Markdown preview tooling or rely on t
 
 - [ ] Install tmux 3.x or newer.
 - [ ] Ensure the Python runtime matches the version expected by `pyproject.toml`.
-- [ ] Create the Conductor home directories (`agent-conductor init`).
+- [ ] Create the Conductor home directories (`acd init`).
 - [ ] Configure provider API keys and CLI binaries.
 - [ ] Start the FastAPI server with the desired host and port.
-- [ ] Verify `agent-conductor launch --provider claude_code --agent-profile conductor` succeeds.
+- [ ] Verify `acd launch --provider claude_code --agent-profile conductor` succeeds.
 - [ ] Confirm terminal logs are being written and the inbox delivery loop is running (check server logs).
 - [ ] Register a sample flow definition (scheduler execution is still pending backlog work).
 - [ ] Document operational contacts and on-call rotation for the deployment.

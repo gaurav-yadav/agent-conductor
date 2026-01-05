@@ -125,8 +125,8 @@ async def shutdown_event() -> None:
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    """Lightweight health probe."""
-    return {"status": "ok"}
+    """Health check endpoint."""
+    return {"status": "ok", "server": "running"}
 
 
 @app.post("/sessions", response_model=TerminalModel, status_code=status.HTTP_201_CREATED)
@@ -141,6 +141,7 @@ async def create_session(
             provider_key=payload.provider,
             role=payload.role,
             agent_profile=payload.agent_profile,
+            working_directory=payload.working_directory,
         )
 
         for worker_request in payload.workers:
@@ -150,6 +151,7 @@ async def create_session(
                     role=worker_request.role,
                     agent_profile=worker_request.agent_profile,
                     session_name=supervisor.session_name,
+                    working_directory=worker_request.working_directory or payload.working_directory,
                 )
             )
 
@@ -206,6 +208,7 @@ async def create_worker_terminal(
             role=payload.role,
             agent_profile=payload.agent_profile,
             session_name=session_name,
+            working_directory=payload.working_directory,
         )
     except ProviderInitializationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

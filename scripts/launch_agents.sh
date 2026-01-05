@@ -15,6 +15,9 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+
 provider="${AC_PROVIDER:-claude_code}"
 conductor_profile="${AC_CONDUCTOR_PROFILE:-conductor}"
 developer_profile="${AC_DEVELOPER_PROFILE:-developer}"
@@ -22,17 +25,18 @@ tester_profile="${AC_TESTER_PROFILE:-tester}"
 reviewer_profile="${AC_REVIEWER_PROFILE:-reviewer}"
 # Optional kickoff instruction automatically sent to the conductor when non-empty.
 # Edit this value (or export AC_INITIAL_INSTRUCTION before running) to auto-seed the session.
-initial_message="${AC_INITIAL_INSTRUCTION:-Please run an end-to-end coordination: instruct the developer to update agent-conductor/test-workspace/add.js so the add function doubles its input, confirm completion, then have the tester write and run checks to prove the behavior, and finally ask the reviewer to sign off on the change with a summary, communicate only via messages.}"
+initial_message="${AC_INITIAL_INSTRUCTION:-Please run an end-to-end coordination: instruct the developer to update ${repo_root}/test-workspace/add.js so the add function doubles its input, confirm completion, then have the tester write and run checks to prove the behavior, and finally ask the reviewer to sign off on the change with a summary, communicate only via messages.}"
 
 echo "Launching conductor supervisor (provider: ${provider}, profile: ${conductor_profile})..."
-conductor_json="$(uv run agent-conductor launch \
+conductor_json="$(uv run acd launch \
   --provider "${provider}" \
   --agent-profile "${conductor_profile}" \
-  --role supervisor
+  --role supervisor \
+  --working-dir "${repo_root}"
 )"
 
-session_name="$(echo "${conductor_json}" | jq -r '.session_name')"
-conductor_id="$(echo "${conductor_json}" | jq -r '.id')"
+session_name="$(echo "${conductor_json}" | jq -r '.name')"
+conductor_id="$(echo "${conductor_json}" | jq -r '.terminals[] | select(.window_name | startswith("supervisor-")).id')"
 
 if [[ -z "${session_name}" || "${session_name}" == "null" ]]; then
   echo "Failed to obtain session name from launch response:" >&2
@@ -50,10 +54,10 @@ for idx in "${!worker_roles[@]}"; do
   role="${worker_roles[$idx]}"
   profile="${worker_profiles[$idx]}"
   echo "Launching ${role} worker (profile: ${profile})..."
-  worker_json="$(uv run agent-conductor worker "${session_name}" \
+  worker_json="$(uv run acd worker "${session_name}" \
     --provider "${provider}" \
     --agent-profile "${profile}" \
-    --role "${role}"
+    --working-dir "${repo_root}"
   )"
   worker_id="$(echo "${worker_json}" | jq -r '.id')"
 
@@ -82,9 +86,9 @@ echo
 
 if [[ -n "${initial_message}" ]]; then
   echo "Dispatching initial instruction to conductor..."
-  uv run agent-conductor send "${conductor_id}" --message "${initial_message}"
+  uv run acd send "${conductor_id}" --message "${initial_message}"
   echo "Initial instruction sent."
   echo
 fi
 
-echo "Use 'uv run agent-conductor send <terminal-id> --message \"...\"' to communicate with each terminal."
+echo "Use 'uv run acd send <terminal-id> --message \"...\"' to communicate with each terminal."

@@ -1,5 +1,7 @@
 # Backlog Snapshot
 
+> **CLI Alias:** `acd` is a short alias for `agent-conductor`. Both commands are interchangeable.
+
 This backlog captures follow-up work identified after v0.2.1. It replaces the historical checklist previously kept in `docs/todo.md`.
 
 ## Documentation

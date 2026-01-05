@@ -28,13 +28,25 @@ class FakeTmuxClient:
     def session_exists(self, name: str) -> bool:
         return name in self.sessions
 
-    def create_session(self, session_name: str, window_name: str, environment=None):
+    def create_session(
+        self,
+        session_name: str,
+        window_name: str,
+        environment=None,
+        start_directory: Optional[str] = None,
+    ):
         if self.session_exists(session_name):
             raise RuntimeError("session exists")
         self.sessions[session_name] = {}
         self.create_window(session_name, window_name, environment)
 
-    def create_window(self, session_name: str, window_name: str, environment=None):
+    def create_window(
+        self,
+        session_name: str,
+        window_name: str,
+        environment=None,
+        start_directory: Optional[str] = None,
+    ):
         session = self.sessions.setdefault(session_name, {})
         session[window_name] = {
             "history": "",

@@ -33,17 +33,22 @@ class TerminalService:
         role: str,
         agent_profile: Optional[str],
         session_name: Optional[str] = None,
+        working_directory: Optional[str] = None,
     ) -> TerminalModel:
         """Create a terminal, spawning a new tmux session if needed."""
         terminal_id = generate_terminal_id()
         target_session = session_name or generate_session_name()
-        window = window_name(role, agent_profile or provider_key)
+        window = window_name(role, agent_profile, provider_key)
         environment = {constants.TERMINAL_ENV_VAR: terminal_id}
 
         if session_name is None:
-            self.tmux.create_session(target_session, window, environment=environment)
+            self.tmux.create_session(
+                target_session, window, environment=environment, start_directory=working_directory
+            )
         else:
-            self.tmux.create_window(target_session, window, environment=environment)
+            self.tmux.create_window(
+                target_session, window, environment=environment, start_directory=working_directory
+            )
 
         self._pipe_logs(target_session, window, terminal_id)
 

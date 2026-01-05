@@ -35,13 +35,17 @@ class TmuxClient:
         session_name: str,
         window_name: str,
         environment: Optional[Dict[str, str]] = None,
+        start_directory: Optional[str] = None,
     ) -> Session:
         """Create a new tmux session with an initial window."""
         if self.session_exists(session_name):
             raise TmuxError(f"tmux session '{session_name}' already exists.")
 
         try:
-            session = self._server.new_session(session_name=session_name, attach=False)
+            kwargs: Dict[str, Any] = {"session_name": session_name, "attach": False}
+            if start_directory:
+                kwargs["start_directory"] = start_directory
+            session = self._server.new_session(**kwargs)
         except Exception as exc:  # pragma: no cover - libtmux specific
             raise TmuxError(f"Failed to create tmux session '{session_name}'.") from exc
 
@@ -55,11 +59,15 @@ class TmuxClient:
         session_name: str,
         window_name: str,
         environment: Optional[Dict[str, str]] = None,
+        start_directory: Optional[str] = None,
     ) -> Window:
         """Spawn a new window inside an existing session."""
         session = self._get_session(session_name)
         try:
-            window = session.new_window(window_name=window_name, attach=False)
+            kwargs: Dict[str, Any] = {"window_name": window_name, "attach": False}
+            if start_directory:
+                kwargs["start_directory"] = start_directory
+            window = session.new_window(**kwargs)
         except Exception as exc:  # pragma: no cover - libtmux specific
             raise TmuxError(
                 f"Failed to create window '{window_name}' in session '{session_name}'."

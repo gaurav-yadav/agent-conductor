@@ -29,6 +29,7 @@ class TerminalCreateRequest(BaseModel):
     provider: str
     role: str = "worker"
     agent_profile: Optional[str] = None
+    working_directory: Optional[str] = None
 
 
 class TerminalInputRequest(BaseModel):

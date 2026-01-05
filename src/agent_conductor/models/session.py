@@ -24,3 +24,4 @@ class SessionCreateRequest(BaseModel):
     agent_profile: Optional[str] = None
     role: str = "supervisor"
     workers: List[TerminalCreateRequest] = Field(default_factory=list)
+    working_directory: Optional[str] = None

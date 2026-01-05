@@ -1,5 +1,7 @@
 # Claude Code Provider Architecture
 
+> **CLI Alias:** `acd` is a short alias for `agent-conductor`. Both commands are interchangeable.
+
 This guide explains how Agent Conductor launches and supervises the Claude Code CLI inside tmux. It documents the lifecycle, status detection, and testing caveats so engineers can debug the provider or extend it for new features without re-reading the source.
 
 ## Why this provider is different

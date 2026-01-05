@@ -2,6 +2,8 @@
 
 **CLI-first orchestrator for multi-agent tmux workflows—supervisor/worker delegation, inbox messaging, and approval gates for Claude Code, Codex, and extensible providers.**
 
+> **Tip:** Use `acd` as a shorter alias for `agent-conductor` in all commands below.
+
 Agent Conductor solves the coordination problem for terminal-based AI agents. When you need multiple agents working together—a supervisor delegating to specialists, tracking progress, and gating dangerous commands—you need more than tmux and shell scripts. Agent Conductor provides structured session management, inter-agent messaging, and a REST API, all backed by SQLite for persistence across restarts.
 <img width="1512" height="891" alt="Screenshot 2025-12-28 at 10 17 30 PM" src="https://github.com/user-attachments/assets/72759536-2187-44c3-8c6e-4366430168a7" />
 
@@ -54,7 +56,7 @@ Each terminal runs a provider (Claude Code, Codex) with a unique ID. The supervi
 uv tool install --from git+https://github.com/gaurav-yadav/agent-conductor.git agent-conductor
 
 # Initialize runtime directories and SQLite database
-agent-conductor init
+acd init
 
 # Start the API server (keep running in a separate terminal)
 uv run uvicorn agent_conductor.api.main:app --host 127.0.0.1 --port 9889
@@ -64,28 +66,28 @@ In another terminal:
 
 ```bash
 # Launch supervisor with developer and tester workers
-RESULT=$(agent-conductor launch --provider claude_code --agent-profile conductor \
+RESULT=$(acd launch --provider claude_code --agent-profile conductor \
   --with-worker developer --with-worker tester)
 
 # Extract IDs
-SESSION=$(echo "$RESULT" | jq -r '.session_name')
-CONDUCTOR_ID=$(echo "$RESULT" | jq -r '.supervisor.id')
+SESSION=$(echo "$RESULT" | jq -r '.name')
+CONDUCTOR_ID=$(echo "$RESULT" | jq -r '.terminals[] | select(.window_name | startswith("supervisor-")).id')
 
 # Send a task to the conductor
-agent-conductor send "$CONDUCTOR_ID" --message "Write a function that adds two numbers, then have it tested."
+acd send "$CONDUCTOR_ID" --message "Write a function that adds two numbers, then have it tested."
 
 # Attach to tmux to observe all agents working (Ctrl-B + 0/1/2 to switch panes)
-tmux attach-session -t "$SESSION"
+acd attach "$SESSION"
 ```
 
 When finished:
 
 ```bash
 # Check active sessions
-agent-conductor sessions
+acd sessions
 
 # Close terminals (or let conductor close them)
-agent-conductor close "$CONDUCTOR_ID"
+acd close "$CONDUCTOR_ID"
 ```
 
 ## Features
@@ -108,9 +110,9 @@ agent-conductor close "$CONDUCTOR_ID"
 A conductor receives your feature request, delegates implementation to a developer worker, sends the result to a tester worker, aggregates feedback, and reports a unified summary.
 
 ```bash
-agent-conductor launch --provider claude_code --agent-profile conductor \
+acd launch --provider claude_code --agent-profile conductor \
   --with-worker developer --with-worker tester
-agent-conductor send "$CONDUCTOR_ID" --message "Implement user authentication with tests"
+acd send "$CONDUCTOR_ID" --message "Implement user authentication with tests"
 ```
 
 ### Parallel Research Agents
@@ -119,8 +121,8 @@ Launch multiple workers for independent research tasks. Poll status or let them 
 
 ```bash
 # Spawn additional workers into an existing session
-agent-conductor worker "$SESSION" --provider claude_code --agent-profile developer
-agent-conductor worker "$SESSION" --provider codex --agent-profile developer
+acd worker "$SESSION" --provider claude_code --agent-profile developer
+acd worker "$SESSION" --provider codex --agent-profile developer
 ```
 
 ### Approval-Gated Commands
@@ -129,13 +131,13 @@ Dangerous commands require explicit approval. The supervisor receives a request,
 
 ```bash
 # Worker requests approval for a risky command
-agent-conductor send "$WORKER_ID" --message "rm -rf ./temp" \
+acd send "$WORKER_ID" --message "rm -rf ./temp" \
   --require-approval --supervisor "$CONDUCTOR_ID"
 
 # Review and act
-agent-conductor approvals --status PENDING
-agent-conductor approve 1
-# or: agent-conductor deny 1 --reason "Too broad, specify directory"
+acd approvals --status PENDING
+acd approve 1
+# or: acd deny 1 --reason "Too broad, specify directory"
 ```
 
 ## What This Is / What This Isn't
@@ -165,24 +167,26 @@ agent-conductor approve 1
 
 ## CLI Reference
 
+> **Shorthand:** `acd` is available as an alias for `agent-conductor`. For example, `acd launch` is equivalent to `agent-conductor launch`.
+
 | Command | Purpose |
 |---------|---------|
-| `agent-conductor init` | Initialize `~/.conductor/` directories and SQLite database |
-| `agent-conductor launch` | Create session with supervisor terminal |
-| `agent-conductor worker <session>` | Spawn worker in existing session |
-| `agent-conductor send <terminal-id>` | Send input to a terminal |
-| `agent-conductor output <terminal-id>` | Fetch terminal output (`--mode full` or `--mode last`) |
-| `agent-conductor close <terminal-id>` | Terminate a terminal |
-| `agent-conductor sessions` | List active sessions and terminals |
-| `agent-conductor send-message` | Queue inbox message between terminals |
-| `agent-conductor inbox <terminal-id>` | List messages for a terminal |
-| `agent-conductor approvals` | List approval requests |
-| `agent-conductor approve <id>` | Approve a pending command |
-| `agent-conductor deny <id>` | Deny a pending command |
-| `agent-conductor personas` | List available agent profiles |
-| `agent-conductor install <source>` | Install agent profile (bundled or local file) |
+| `acd init` | Initialize `~/.conductor/` directories and SQLite database |
+| `acd launch` | Create session with supervisor terminal |
+| `acd worker <session>` | Spawn worker in existing session |
+| `acd send <terminal-id>` | Send input to a terminal |
+| `acd output <terminal-id>` | Fetch terminal output (`--mode full` or `--mode last`) |
+| `acd close <terminal-id>` | Terminate a terminal |
+| `acd sessions` | List active sessions and terminals |
+| `acd send-message` | Queue inbox message between terminals |
+| `acd inbox <terminal-id>` | List messages for a terminal |
+| `acd approvals` | List approval requests |
+| `acd approve <id>` | Approve a pending command |
+| `acd deny <id>` | Deny a pending command |
+| `acd personas` | List available agent profiles |
+| `acd install <source>` | Install agent profile (bundled or local file) |
 
-Run `agent-conductor --help` or `agent-conductor <command> --help` for full options.
+Run `acd --help` or `acd <command> --help` for full options.
 
 ## Architecture
 
@@ -234,10 +238,10 @@ Install custom profiles:
 
 ```bash
 # Install bundled profile to user scope
-agent-conductor install developer
+acd install developer
 
 # Install local file to project scope
-agent-conductor install ./my-specialist.md --scope project
+acd install ./my-specialist.md --scope project
 ```
 
 ## Running the API Server
@@ -265,7 +269,7 @@ If tmux sessions or database get out of sync:
 ```bash
 # Stop the API server, then:
 rm ~/.conductor/db/conductor.db
-agent-conductor init
+acd init
 
 # Kill any lingering tmux sessions
 tmux kill-server
