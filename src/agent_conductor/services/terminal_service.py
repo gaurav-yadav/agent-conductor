@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import shlex
+import textwrap
 from typing import List, Optional
 
 from agent_conductor import constants
@@ -11,8 +12,8 @@ from agent_conductor.clients.database import Terminal as TerminalORM, session_sc
 from agent_conductor.clients.tmux import TmuxClient, TmuxError
 from agent_conductor.models.enums import TerminalStatus
 from agent_conductor.models.terminal import Terminal as TerminalModel
-from agent_conductor.providers.base import ProviderInitializationError
-from agent_conductor.providers.manager import ProviderManager
+from agent_conductor.providers.base import BaseProvider, ProviderInitializationError
+from agent_conductor.providers.manager import ProviderManager, UnknownProviderError
 from agent_conductor.utils.pathing import ensure_runtime_directories
 from agent_conductor.utils.terminal import generate_session_name, generate_terminal_id, window_name
 
@@ -75,7 +76,23 @@ class TerminalService:
         with session_scope() as db:
             db.add(db_obj)
 
-        return TerminalModel.model_validate(db_obj, from_attributes=True)
+        terminal_model = TerminalModel.model_validate(db_obj, from_attributes=True)
+
+        if session_name is not None and not window.startswith("supervisor-"):
+            try:
+                self._send_worker_bootstrap(
+                    session_name=target_session,
+                    worker_terminal_id=terminal_id,
+                    agent_profile=agent_profile,
+                )
+            except Exception:  # pragma: no cover - defensive guard
+                LOG.warning(
+                    "Failed to send bootstrap message to terminal %s",
+                    terminal_id,
+                    exc_info=True,
+                )
+
+        return terminal_model
 
     def get_terminal(self, terminal_id: str) -> Optional[TerminalModel]:
         """Return terminal metadata if it exists."""
@@ -95,8 +112,31 @@ class TerminalService:
             )
             return [TerminalModel.model_validate(obj, from_attributes=True) for obj in results]
 
+    def ensure_provider_loaded(self, terminal_id: str) -> BaseProvider:
+        """Ensure an in-memory provider exists for a terminal (handles API reloads)."""
+        try:
+            return self.providers.get_provider(terminal_id)
+        except (UnknownProviderError, KeyError):
+            terminal = self.get_terminal(terminal_id)
+            if not terminal:
+                raise
+            LOG.info(
+                "Re-attaching provider %s for terminal %s (%s/%s)",
+                terminal.provider,
+                terminal.id,
+                terminal.session_name,
+                terminal.window_name,
+            )
+            return self.providers.attach_provider(
+                provider_key=terminal.provider,
+                terminal_id=terminal.id,
+                session_name=terminal.session_name,
+                window_name=terminal.window_name,
+                agent_profile=terminal.agent_profile,
+            )
+
     def send_input(self, terminal_id: str, message: str) -> None:
-        provider = self.providers.get_provider(terminal_id)
+        provider = self.ensure_provider_loaded(terminal_id)
         provider.send_input(message)
         self._update_status(terminal_id, provider.get_status())
 
@@ -106,7 +146,7 @@ class TerminalService:
             raise RuntimeError(f"Terminal '{terminal_id}' not found.")
         history = self.tmux.capture_pane(terminal.session_name, terminal.window_name)
         if last_only:
-            provider = self.providers.get_provider(terminal_id)
+            provider = self.ensure_provider_loaded(terminal_id)
             return provider.extract_last_message_from_history(history)
         return history
 
@@ -164,3 +204,54 @@ class TerminalService:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         command = f"cat >> {shlex.quote(str(log_path))}"
         self.tmux.pipe_pane(session_name, window_name, command)
+
+    def _find_supervisor_id(self, session_name: str) -> Optional[str]:
+        with session_scope() as db:
+            supervisor = (
+                db.query(TerminalORM)
+                .filter(
+                    TerminalORM.session_name == session_name,
+                    TerminalORM.window_name.startswith("supervisor-"),
+                )
+                .order_by(TerminalORM.created_at.asc())
+                .first()
+            )
+            return supervisor.id if supervisor else None
+
+    def _send_worker_bootstrap(
+        self,
+        *,
+        session_name: str,
+        worker_terminal_id: str,
+        agent_profile: Optional[str],
+    ) -> None:
+        supervisor_id = self._find_supervisor_id(session_name)
+        if not supervisor_id or supervisor_id == worker_terminal_id:
+            return
+
+        role_label = agent_profile or "Worker"
+        message = textwrap.dedent(
+            f"""
+            ## COMMUNICATION
+
+            Conductor terminal ID: `{supervisor_id}`
+
+            Send updates:
+            `acd s {supervisor_id} -m "{role_label} update: <status>"`
+
+            - Heartbeat: ~1/min during long tasks
+            - Blockers: report immediately with context
+            - Completion: summarize what was done + next steps
+
+            If you lose the conductor ID:
+            `acd ls` and look for window name starting with `supervisor-`.
+
+            ## DEBUGGING YOUR OWN ISSUES
+
+            `acd health`
+            `acd status $CONDUCTOR_TERMINAL_ID`
+            `acd logs $CONDUCTOR_TERMINAL_ID`
+            """
+        ).strip()
+
+        self.send_input(worker_terminal_id, message)

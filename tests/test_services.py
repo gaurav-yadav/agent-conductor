@@ -44,6 +44,17 @@ def test_send_input_updates_status_and_history(terminal_service, fake_tmux, prov
         assert stored.status == TerminalStatus.COMPLETED
 
 
+def test_send_input_reattaches_provider_when_missing(terminal_service, provider_manager):
+    terminal = terminal_service.create_terminal("claude_code", "worker", "developer")
+    provider_manager.providers.pop(terminal.id)
+
+    terminal_service.send_input(terminal.id, "echo reattached")
+
+    assert terminal.id in provider_manager.providers
+    provider = provider_manager.providers[terminal.id]
+    assert provider.sent_messages[-1] == "echo reattached"
+
+
 def test_capture_output_last_only(terminal_service, fake_tmux):
     terminal = terminal_service.create_terminal("claude_code", "worker", "developer")
     fake_tmux.append_history(terminal.session_name, terminal.window_name, "line-one")

@@ -14,6 +14,7 @@ from agent_conductor.services.approval_service import ApprovalService
 from agent_conductor.services.inbox_service import InboxService
 from agent_conductor.services.session_service import SessionService
 from agent_conductor.services.terminal_service import TerminalService
+from agent_conductor.providers.manager import UnknownProviderError
 
 
 class FakeTmuxClient:
@@ -143,7 +144,26 @@ class StubProviderManager:
         return provider
 
     def get_provider(self, terminal_id: str) -> StubProvider:
-        return self.providers[terminal_id]
+        provider = self.providers.get(terminal_id)
+        if not provider:
+            raise UnknownProviderError(f"Provider for terminal '{terminal_id}' is not loaded.")
+        return provider
+
+    def attach_provider(
+        self,
+        provider_key: str,
+        terminal_id: str,
+        session_name: str,
+        window_name: str,
+        agent_profile: str | None,
+    ) -> StubProvider:
+        provider = self.providers.get(terminal_id)
+        if provider:
+            return provider
+        provider = StubProvider(terminal_id, session_name, window_name, self.tmux)
+        provider.initialize()
+        self.providers[terminal_id] = provider
+        return provider
 
     def cleanup_provider(self, terminal_id: str) -> None:
         provider = self.providers.pop(terminal_id, None)

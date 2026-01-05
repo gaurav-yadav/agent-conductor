@@ -103,10 +103,19 @@ class TmuxClient:
         pane = window.attached_pane
         pane.send_keys(
             keys,
-            enter=enter,
+            enter=False,
             suppress_history=suppress_history,
             literal=literal,
         )
+        if enter:
+            # libtmux's `enter=True` is occasionally flaky for certain TUIs;
+            # send Enter explicitly as a follow-up keystroke for reliability.
+            pane.send_keys(
+                "Enter",
+                enter=False,
+                suppress_history=suppress_history,
+                literal=False,
+            )
 
     def capture_pane(
         self,

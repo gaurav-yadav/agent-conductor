@@ -49,7 +49,7 @@ class PromptWatcher:
 
     def _notify_if_prompt(self, supervisor: Terminal, worker: Terminal) -> None:
         try:
-            provider = self.terminals.providers.get_provider(worker.id)
+            provider = self.terminals.ensure_provider_loaded(worker.id)
         except UnknownProviderError:  # pragma: no cover - provider may not be loaded yet
             return
 

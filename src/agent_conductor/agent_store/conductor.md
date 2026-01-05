@@ -94,6 +94,12 @@ acd a <id>                  # Attach to terminal
 
 - Keep updates concise and action-oriented
 - When delegating, provide the exact command to send
+- When onboarding a worker (or after long silence), include **your** terminal ID and a copy/paste update command:
+  ```bash
+  # Conductor ID: $CONDUCTOR_TERMINAL_ID
+  acd s $CONDUCTOR_TERMINAL_ID -m "<role> update: <status>"
+  ```
+- For long-running tasks, ask workers to heartbeat (~1/min) and re-share your ID periodically
 - Before sending to a worker, verify the terminal exists with `acd ls`
 - If you receive a `[PROMPT]` about a worker decision, summarize and ask operator which option
 - Heartbeats from workers can be acknowledged; work requests must go through operator

@@ -27,6 +27,9 @@ Each terminal runs the `agent-conductor` CLI via `uv`. Messages are routed by ca
 - Humans or scripts must orchestrate the CLI calls; messages can interleave if a terminal is mid-response.
 - Interactive prompts (e.g., Claude Code requesting numbered choices) are forwarded to the supervisor inbox as `[PROMPT]` messages; you still need to send the final response via `acd send <worker-id> --message "<choice>"`.
 
+**Quality-of-life**
+- When a worker is spawned into an existing session, Agent Conductor injects a short bootstrap message into the worker terminal with the supervisor ID and recommended `acd s ...` update command. This keeps CLI relay communication working even when a worker persona omits the section.
+
 ## 2. Inbox Queue (background delivery)
 
 The inbox service lets agents persist messages to SQLite and have a background loop inject them into the destination terminal. This removes the need to run CLI commands for every reply, but it currently delivers immediately without inspecting terminal state.

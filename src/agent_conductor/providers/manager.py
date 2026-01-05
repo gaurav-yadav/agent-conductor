@@ -63,6 +63,33 @@ class ProviderManager:
             raise UnknownProviderError(f"Provider for terminal '{terminal_id}' is not loaded.")
         return self._providers[terminal_id]
 
+    def attach_provider(
+        self,
+        provider_key: str,
+        terminal_id: str,
+        session_name: str,
+        window_name: str,
+        agent_profile: Optional[str],
+    ) -> BaseProvider:
+        """Attach to an existing tmux window without re-initializing the provider process."""
+        existing = self._providers.get(terminal_id)
+        if existing:
+            return existing
+
+        if provider_key not in self._registry:
+            raise UnknownProviderError(f"Provider '{provider_key}' is not registered.")
+
+        provider_cls = self._registry[provider_key]
+        provider = provider_cls(
+            terminal_id=terminal_id,
+            session_name=session_name,
+            window_name=window_name,
+            agent_profile=agent_profile,
+            tmux=self.tmux,
+        )
+        self._providers[terminal_id] = provider
+        return provider
+
     def cleanup_provider(self, terminal_id: str) -> None:
         provider = self._providers.pop(terminal_id, None)
         if provider:
